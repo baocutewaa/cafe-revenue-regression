@@ -1,0 +1,6 @@
+fold_key,experiment,fold_name,data_version,train_period,val_period,train_rows,val_rows,rmsle,mae,rmse,mean_log_residual,std_log_residual,purpose
+fold_a,E0_baseline,Fold A (Q1/2025),clean_dedup,Start to 2025-01-01,2025-01-01 to 2025-04-01,12281,3170,0.3037,4.0345,12.6352,0.0118,0.3035,Đo dự báo quý tiếp theo (Q1/2025)
+fold_b,E0_baseline,Fold B (Q2/2025),clean_dedup,Start to 2025-04-01,2025-04-01 to 2025-07-01,15451,3531,0.2684,3.9226,10.8542,0.055,0.2627,Kiểm tra độ ổn định trong giai đoạn train (Q2/2025)
+primary_val,E0_baseline,Holdout chính (Q3/2025),clean_dedup,Start to 2025-07-01,2025-07-01 to 2025-10-01,18982,3686,0.3101,4.3111,12.4634,0.0073,0.31,Chọn pipeline trên validation đã khóa (Q3/2025)
+notebook_baseline,E0_baseline,Notebook Benchmark (Q4/2025),clean_dedup,Start to 2025-10-01,2025-10-01 to 2026-01-01,22668,3832,0.2391,3.5719,7.1075,0.0579,0.232,Tái lập điểm starter_cafe.ipynb lịch sử
+notebook_raw_benchmark,E0_starter_raw,Notebook Benchmark (Raw duplicates),raw_with_132_dups,Start to 2025-10-01,2025-10-01 to 2025-12-31,22779,3853,0.2387,3.5637,7.0912,0.0575,0.2317,Đối chiếu chính xác kết quả 0.2387 trong starter_cafe.ipynb
