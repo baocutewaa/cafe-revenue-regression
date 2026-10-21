@@ -3,7 +3,7 @@
 > **Dự án:** Cafe Revenue Regression  
 > **Tài liệu tham chiếu:** `Regression_Plan.md` (Giai đoạn 2 — Section 8 & Section 12)  
 > **Metric chính:** RMSLE (Root Mean Squared Logarithmic Error)  
-> **Thời gian chạy:** 2026-10-20 11:41:05  
+> **Thời gian chạy:** 2026-10-17 11:41:05  
 
 ---
 

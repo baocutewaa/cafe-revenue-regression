@@ -9,6 +9,17 @@ from src.features.builder import (
     get_feature_columns,
 )
 
+from src.features.tree_builder import (
+    ALL_TREE_FEATURES,
+    TREE_CATEGORICAL_COLS,
+    TREE_NUMERIC_COLS,
+    TREE_BINARY_COLS,
+    correct_revenue_outliers,
+    compute_historical_target_stats,
+    apply_historical_target_stats,
+    prepare_tree_feature_matrices,
+)
+
 __all__ = [
     "add_calendar_features",
     "add_store_features",
@@ -16,4 +27,12 @@ __all__ = [
     "FEATURE_CONFIGS",
     "build_all_features",
     "get_feature_columns",
+    "ALL_TREE_FEATURES",
+    "TREE_CATEGORICAL_COLS",
+    "TREE_NUMERIC_COLS",
+    "TREE_BINARY_COLS",
+    "correct_revenue_outliers",
+    "compute_historical_target_stats",
+    "apply_historical_target_stats",
+    "prepare_tree_feature_matrices",
 ]

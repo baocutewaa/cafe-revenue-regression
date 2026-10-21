@@ -1,15 +1,23 @@
-fold_key,experiment,fold_name,data_version,train_period,val_period,train_rows,val_rows,rmsle,mae,rmse,mean_log_residual,std_log_residual,purpose,model_family,feature_tier,hyperparameters,mean_log_res,relative_improvement
-fold_a,E0_baseline,Fold A (Q1/2025),clean_dedup,Start to 2025-01-01,2025-01-01 to 2025-04-01,12281.0,3170.0,0.3037,4.0345,12.6352,0.0118,0.3035,Đo dự báo quý tiếp theo (Q1/2025),,,,,
-fold_b,E0_baseline,Fold B (Q2/2025),clean_dedup,Start to 2025-04-01,2025-04-01 to 2025-07-01,15451.0,3531.0,0.2684,3.9226,10.8542,0.055,0.2627,Kiểm tra độ ổn định trong giai đoạn train (Q2/2025),,,,,
-primary_val,E0_baseline,Holdout chính (Q3/2025),clean_dedup,Start to 2025-07-01,2025-07-01 to 2025-10-01,18982.0,3686.0,0.3101,4.3111,12.4634,0.0073,0.31,Chọn pipeline trên validation đã khóa (Q3/2025),,,,,
-notebook_baseline,E0_baseline,Notebook Benchmark (Q4/2025),clean_dedup,Start to 2025-10-01,2025-10-01 to 2026-01-01,22668.0,3832.0,0.2391,3.5719,7.1075,0.0579,0.232,Tái lập điểm starter_cafe.ipynb lịch sử,,,,,
-notebook_raw_benchmark,E0_starter_raw,Notebook Benchmark (Raw duplicates),raw_with_132_dups,Start to 2025-10-01,2025-10-01 to 2025-12-31,22779.0,3853.0,0.2387,3.5637,7.0912,0.0575,0.2317,Đối chiếu chính xác kết quả 0.2387 trong starter_cafe.ipynb,,,,,
-,E0_baseline,,,,,,,0.3101,4.3111,12.4634,,,,MedianBaseline,store_weekday_median,None (hierarchical),0.0073,0.0% (Benchmark)
-,E1_calendar_store,,,,,,,0.2962,4.4062,12.5643,,,,Ridge (log target),E1_calendar_store,alpha=1.0,0.0303,+4.48%
-,E2_promo,,,,,,,0.2894,4.3375,12.3485,,,,Ridge (log target),E2_promo,alpha=1.0,0.0336,+6.68%
-,E3_weather_holiday,,,,,,,0.2631,3.7488,12.206,,,,Ridge (log target),E3_weather_holiday,alpha=1.0,0.0187,+15.16%
-,E4_ridge,,,,,,,0.2646,3.7906,12.2298,,,,Ridge (tuned a=10),E3_weather_holiday,alpha=10.0,0.0215,+14.67%
-,E4_ols,,,,,,,0.2639,3.7494,12.2047,,,,OLS (LinearRegression),E3_weather_holiday,unregularized,0.017,+14.90%
-,E4_huber,,,,,,,0.2727,3.585,12.1192,,,,HuberRegressor (robust),E3_weather_holiday,"alpha=1.0, eps=1.35",0.0041,+12.06%
-,E4_elastic_net,,,,,,,0.2726,3.9603,12.3094,,,,ElasticNet (L1+L2),E3_weather_holiday,"alpha=0.001, l1_ratio=0.1",0.02,+12.09%
-,E4_lasso,,,,,,,0.2872,4.2601,12.491,,,,Lasso (L1),E3_weather_holiday,alpha=0.0005,0.0186,+7.38%
+fold_key,experiment,fold_name,data_version,train_period,val_period,train_rows,val_rows,rmsle,mae,rmse,mean_log_residual,std_log_residual,purpose,model_family,feature_tier,hyperparameters,mean_log_res,relative_improvement,use_log_target,vs_baseline_%,vs_linear_%
+fold_a,E0_baseline,Fold A (Q1/2025),clean_dedup,Start to 2025-01-01,2025-01-01 to 2025-04-01,12281.0,3170.0,0.3037,4.0345,12.6352,0.0118,0.3035,Đo dự báo quý tiếp theo (Q1/2025),,,,,,,,
+fold_b,E0_baseline,Fold B (Q2/2025),clean_dedup,Start to 2025-04-01,2025-04-01 to 2025-07-01,15451.0,3531.0,0.2684,3.9226,10.8542,0.055,0.2627,Kiểm tra độ ổn định trong giai đoạn train (Q2/2025),,,,,,,,
+primary_val,E0_baseline,Holdout chính (Q3/2025),clean_dedup,Start to 2025-07-01,2025-07-01 to 2025-10-01,18982.0,3686.0,0.3101,4.3111,12.4634,0.0073,0.31,Chọn pipeline trên validation đã khóa (Q3/2025),,,,,,,,
+notebook_baseline,E0_baseline,Notebook Benchmark (Q4/2025),clean_dedup,Start to 2025-10-01,2025-10-01 to 2026-01-01,22668.0,3832.0,0.2391,3.5719,7.1075,0.0579,0.232,Tái lập điểm starter_cafe.ipynb lịch sử,,,,,,,,
+notebook_raw_benchmark,E0_starter_raw,Notebook Benchmark (Raw duplicates),raw_with_132_dups,Start to 2025-10-01,2025-10-01 to 2025-12-31,22779.0,3853.0,0.2387,3.5637,7.0912,0.0575,0.2317,Đối chiếu chính xác kết quả 0.2387 trong starter_cafe.ipynb,,,,,,,,
+,E0_baseline,,,,,,,0.3101,4.3111,12.4634,,,,MedianBaseline,store_weekday_median,None (hierarchical),0.0073,0.0% (Benchmark),,,
+,E1_calendar_store,,,,,,,0.2962,4.4062,12.5643,,,,Ridge (log target),E1_calendar_store,alpha=1.0,0.0303,+4.48%,,,
+,E2_promo,,,,,,,0.2894,4.3375,12.3485,,,,Ridge (log target),E2_promo,alpha=1.0,0.0336,+6.68%,,,
+,E3_weather_holiday,,,,,,,0.2631,3.7488,12.206,,,,Ridge (log target),E3_weather_holiday,alpha=1.0,0.0187,+15.16%,,,
+,E4_ridge,,,,,,,0.2646,3.7906,12.2298,,,,Ridge (tuned a=10),E3_weather_holiday,alpha=10.0,0.0215,+14.67%,,,
+,E4_ols,,,,,,,0.2639,3.7494,12.2047,,,,OLS (LinearRegression),E3_weather_holiday,unregularized,0.017,+14.90%,,,
+,E4_huber,,,,,,,0.2727,3.585,12.1192,,,,HuberRegressor (robust),E3_weather_holiday,"alpha=1.0, eps=1.35",0.0041,+12.06%,,,
+,E4_elastic_net,,,,,,,0.2726,3.9603,12.3094,,,,ElasticNet (L1+L2),E3_weather_holiday,"alpha=0.001, l1_ratio=0.1",0.02,+12.09%,,,
+,E4_lasso,,,,,,,0.2872,4.2601,12.491,,,,Lasso (L1),E3_weather_holiday,alpha=0.0005,0.0186,+7.38%,,,
+,T0_baseline,,,,,,,0.3101,4.3126,12.4638,,,,WeekdayMedianBaseline,,,0.0077,,False,0.0% (Mốc chuẩn),-17.86%
+,T0_ridge,,,,,,,0.2631,3.75,12.21,,,,Ridge (Phase 2 Best),,,0.0187,,True,+15.16%,0.0% (Mốc Phase 2)
+,T1_random_forest,,,,,,,0.2512,3.3454,12.0137,,,,RandomForestRegressor,,,0.0359,,True,+18.99%,+4.52%
+,T2_extra_trees,,,,,,,0.2293,3.0918,11.8425,,,,ExtraTreesRegressor,,,0.0326,,True,+26.06%,+12.85%
+,T3_hist_gradient_boosting,,,,,,,0.2215,2.9721,11.8166,,,,HistGradientBoosting,,,0.0439,,True,+28.57%,+15.81%
+,T4_lightgbm_default,,,,,,,0.2231,3.0235,11.8303,,,,LightGBM (default),,,0.0372,,True,+28.06%,+15.20%
+,T5_lightgbm_tuned,,,,,,,0.2163,2.921,11.7877,,,,LightGBM (tuned),,,0.0385,,True,+30.25%,+17.79%
+,T6_target_raw,,,,,,,0.2716,3.9211,12.4138,,,,LightGBM (raw revenue),,,-0.0173,,False,+12.42%,-3.23%

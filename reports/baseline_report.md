@@ -3,7 +3,7 @@
 > **Dự án:** Cafe Revenue Regression  
 > **Mục tiêu:** Xây dựng và tái lập đường cơ sở (Baseline) dự báo doanh thu cà phê  
 > **Metric chính:** RMSLE (Root Mean Squared Logarithmic Error)  
-> **Thời gian chạy:** 2026-10-20 10:34:30  
+> **Thời gian chạy:** 2026-10-16 10:34:30  
 
 ---
 
