@@ -108,26 +108,33 @@ class LogTransformedTreeModel:
         else:
             raise ValueError(f"Unsupported model_type: {self.model_type}")
 
-    def _create_preprocessor(self) -> ColumnTransformer:
+    def _create_preprocessor(
+        self,
+        cat_cols: List[str],
+        num_cols: List[str],
+        bin_cols: List[str],
+    ) -> ColumnTransformer:
         """Build column transformer with ordinal encoding for categorical features."""
-        cat_pipeline = Pipeline([
-            ("imputer", SimpleImputer(strategy="constant", fill_value="missing")),
-            ("ordinal", OrdinalEncoder(handle_unknown="use_encoded_value", unknown_value=-1)),
-        ])
+        transformers = []
+        if cat_cols:
+            cat_pipeline = Pipeline([
+                ("imputer", SimpleImputer(strategy="constant", fill_value="missing")),
+                ("ordinal", OrdinalEncoder(handle_unknown="use_encoded_value", unknown_value=-1)),
+            ])
+            transformers.append(("cat", cat_pipeline, cat_cols))
 
-        num_pipeline = Pipeline([
-            ("imputer", SimpleImputer(strategy="median")),
-        ])
+        if num_cols:
+            num_pipeline = Pipeline([
+                ("imputer", SimpleImputer(strategy="median")),
+            ])
+            transformers.append(("num", num_pipeline, num_cols))
 
-        bin_pipeline = Pipeline([
-            ("imputer", SimpleImputer(strategy="constant", fill_value=0)),
-        ])
+        if bin_cols:
+            bin_pipeline = Pipeline([
+                ("imputer", SimpleImputer(strategy="constant", fill_value=0)),
+            ])
+            transformers.append(("bin", bin_pipeline, bin_cols))
 
-        transformers = [
-            ("cat", cat_pipeline, self.cat_cols),
-            ("num", num_pipeline, self.num_cols),
-            ("bin", bin_pipeline, self.bin_cols),
-        ]
         return ColumnTransformer(transformers=transformers, remainder="drop")
 
     def fit(self, X: pd.DataFrame, y: Union[np.ndarray, pd.Series]) -> "LogTransformedTreeModel":
@@ -139,7 +146,12 @@ class LogTransformedTreeModel:
         # Transform target if requested
         y_fit = np.log1p(y_arr) if self.use_log_target else y_arr
 
-        preprocessor = self._create_preprocessor()
+        avail_cat = [c for c in self.cat_cols if c in X.columns]
+        avail_num = [c for c in self.num_cols if c in X.columns]
+        avail_bin = [c for c in self.bin_cols if c in X.columns]
+        self.feature_names_ = avail_cat + avail_num + avail_bin
+
+        preprocessor = self._create_preprocessor(avail_cat, avail_num, avail_bin)
         regressor = self._create_regressor()
 
         self.pipeline = Pipeline([
@@ -150,8 +162,6 @@ class LogTransformedTreeModel:
         self.pipeline.fit(X, y_fit)
         self.is_fitted = True
 
-        # Extract feature names
-        self.feature_names_ = self.cat_cols + self.num_cols + self.bin_cols
 
         # Extract feature importances
         reg = self.pipeline.named_steps["regressor"]
