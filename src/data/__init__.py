@@ -9,6 +9,12 @@ from src.data.load import (
     create_temporal_splits,
     load_splits,
 )
+from src.data.join import (
+    clean_stores,
+    clean_holidays,
+    clean_weather,
+    join_all_data,
+)
 
 __all__ = [
     "load_raw_train",
@@ -18,4 +24,8 @@ __all__ = [
     "deduplicate_train",
     "create_temporal_splits",
     "load_splits",
+    "clean_stores",
+    "clean_holidays",
+    "clean_weather",
+    "join_all_data",
 ]

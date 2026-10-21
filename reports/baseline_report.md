@@ -96,3 +96,15 @@
 2. **Độ biến thiên theo loại cửa hàng:** Các cửa hàng văn phòng (`office`) và trường học (`university`) có tính chu kỳ tuần rất rõ rệt; trong khi cửa hàng mặt phố (`street`) và trung tâm thương mại (`mall`) chịu ảnh hưởng mạnh hơn bởi thời tiết và ngày nghỉ lễ.
 3. **Cửa hàng có lịch sử ngắn:** Cửa hàng mới mở trong giai đoạn train có ít mẫu quan sát nên median weekday chưa hội tụ. Cần dùng hierarchical shrinkage hoặc Bayesian target encoding ở các giai đoạn sau.
 4. **Mục tiêu Giai đoạn 2 (Linear Models):** Xây dựng Ridge / ElasticNet trên `log1p(revenue)` kết hợp calendar features và store metadata để vượt mốc baseline 0.3101 (mục tiêu <= 0.2946).
+
+---
+
+## 5. Môi trường thực thi & Khả năng tái lập (Reproducibility)
+
+- **Môi trường ảo:** Python `venv` độc lập (loại trừ khỏi git via `.gitignore`).
+- **Thư viện phụ thuộc:** Quản lý tập trung tại `requirements.txt` với phiên bản pinned (`numpy>=1.26.0`, `pandas>=2.1.0`, `scikit-learn>=1.3.0`, `matplotlib>=3.8.0`, `seaborn>=0.13.0`, `ipykernel>=6.29.0`).
+- **Quy trình tái lập:**
+  1. Kích hoạt môi trường: `.\venv\Scripts\Activate.ps1`
+  2. Cài đặt thư viện: `pip install -r requirements.txt`
+  3. Tái lập thí nghiệm: `python src/experiments/run_baseline.py`
+  4. Kiểm thử logic: `python -m unittest discover tests`
