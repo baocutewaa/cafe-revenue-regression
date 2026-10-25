@@ -18,11 +18,11 @@ cells.append(nbf.v4.new_markdown_cell("""# Giai đoạn 5: Lags và Ensemble Mod
 > **Target:** `revenue` (Triệu VND, không âm)  
 > **Metric chính:** RMSLE (Root Mean Squared Logarithmic Error)  
 > **Mốc chuẩn trước đó:**
-> - Baseline Giai đoạn 1: **RMSLE = 0.3101** | MAE = **4.31 triệu VND**
-> - Tuyến tính Ridge Giai đoạn 2: **RMSLE = 0.2631** | MAE = **3.75 triệu VND** (+15.16% vs Base)
-> - Tree-based LightGBM Giai đoạn 3: **RMSLE = 0.2163** | MAE = **2.92 triệu VND** (+30.25% vs Base)
-> - Target Transform Huber Giai đoạn 4: **RMSLE = 0.2129** | MAE = **2.88 triệu VND** (+31.34% vs Base)
-> - **Mục tiêu KPI Giai đoạn 5:** Giải đáp thấu đáo vai trò của lags trong dự báo 90 ngày; kết hợp đa dạng các họ mô hình (Tree + Linear) và tối ưu hóa trọng số để đạt kỷ lục cao nhất toàn dự án.
+> - Baseline Giai đoạn 1: **RMSLE = 0.2391** (Clean) / **0.2387** (Raw) | MAE = **3.57 triệu VND**
+> - Tuyến tính Ridge Giai đoạn 2: **RMSLE = 0.1978** | MAE = **2.94 triệu VND** (+17.27% vs Base)
+> - Tree-based LightGBM Giai đoạn 3: **RMSLE = 0.1667** | MAE = **2.49 triệu VND** (+30.28% vs Base)
+> - Target Transform Huber Giai đoạn 4: **RMSLE = 0.1664** | MAE = **2.46 triệu VND** (+30.43% vs Base)
+> - **Mục tiêu KPI Giai đoạn 5:** Giải đáp thấu đáo vai trò của lags trong dự báo 90 ngày; kết hợp đa dạng các họ mô hình (Tree + Linear), tối ưu hóa trọng số và áp dụng Duan smearing để thiết lập đỉnh cao mới toàn dự án.
 
 ---
 
@@ -41,11 +41,11 @@ cells.append(nbf.v4.new_markdown_cell("""# Giai đoạn 5: Lags và Ensemble Mod
    - **ENS1:** Simple Equal-Weighted Average (Trung bình giản đơn 5 mô hình trong log-space)
    - **ENS2:** Top-3 Tree Average (LightGBM + ExtraTrees + HistGBR)
    - **ENS3:** Out-of-Fold Stacking Regressor (K-Fold cross-validation với Ridge meta-learner)
-   - **ENS4:** Optimized Weighted Blend (Tối ưu hóa trọng số SLSQP: 0.90 LightGBM Huber + 0.10 Ridge)
-   - **ENS5:** Optimized Blend kết hợp Duan Smearing Adjustment (Thiết lập đỉnh cao mới toàn dự án).
-4. **Walk-Forward Backtesting qua 3 Chu kỳ Thời gian:**
-   - Kiểm chứng tính ổn định và vượt trội trên Fold A (Q1/2025), Fold B (Q2/2025), và Primary Val (Q3/2025).
-5. **Phân tích Chi tiết Lỗi theo Nhóm (Subgroup Error Analysis).**
+   - **ENS4:** Optimized Weighted Blend (0.91 LightGBM Huber + 0.09 Ridge)
+   - **ENS5:** Optimized Blend kết hợp Duan Smearing Adjustment (Thiết lập đỉnh cao mới toàn dự án: **RMSLE = 0.1603**, **MAE = 2.33 triệu VND**).
+4. **Walk-Forward Backtesting qua 4 Chu kỳ Thời gian:**
+   - Kiểm chứng tính ổn định và vượt trội trên Fold A (Q1/2025), Fold B (Q2/2025), Fold C (Q3/2025), và Primary Val (Q4/2025).
+5. **Phân tích Chi tiết Lỗi theo Nhóm (Subgroup Error Analysis trên Q4/2025).**
 6. **Chẩn đoán Sai số Log Residuals & Đồ thị Thực tế vs Dự báo.**
 """))
 
@@ -69,7 +69,7 @@ from sklearn.model_selection import KFold
 
 from src.config import (
     DATE_COL, STORE_COL, TARGET_COL, PROMO_COL,
-    PRIMARY_TRAIN_END, PRIMARY_VAL_END, PRIMARY_TEST_END,
+    PRIMARY_TRAIN_END, PRIMARY_VAL_END,
     WALK_FORWARD_FOLDS, MODELS_DIR, REPORTS_DIR, PROCESSED_DATA_DIR
 )
 from src.data.load import (
@@ -135,7 +135,7 @@ sorted_df["log_lag_14"] = np.log1p(sorted_df["lag_14"].fillna(sorted_df[TARGET_C
 raw_tr = sorted_df[sorted_df[DATE_COL] < PRIMARY_TRAIN_END].copy()
 raw_va = sorted_df[(sorted_df[DATE_COL] >= PRIMARY_TRAIN_END) & (sorted_df[DATE_COL] < PRIMARY_VAL_END)].copy()
 
-tr_df, va_df, _, base_features = prepare_tree_feature_matrices(raw_tr, raw_va)
+tr_df, va_df, _, base_features = prepare_tree_feature_matrices(raw_tr, raw_va, test_df=None)
 
 y_tr = tr_df[TARGET_COL].values
 y_va = va_df[TARGET_COL].values
@@ -357,7 +357,7 @@ Chúng ta đánh giá:
 1. **ENS1 (Simple Average Blend):** Trung bình đều cả 5 mô hình trong log space.
 2. **ENS2 (Top-3 Tree Average):** Trung bình đều 3 mô hình cây tốt nhất.
 3. **ENS3 (Out-of-Fold Stacking Regressor):** Meta-Ridge với 4-Fold cross-validation trên tập Train.
-4. **ENS4 (Optimized Weighted Blend):** Tối ưu hóa trọng số SLSQP: 0.90 LightGBM Huber + 0.10 Ridge.
+4. **ENS4 (Optimized Weighted Blend):** 0.91 LightGBM Huber + 0.09 Linear Ridge.
 5. **ENS5 (Optimized Blend + Duan Smearing):** Kết hợp trọng số tối ưu và hiệu chỉnh Duan Smearing.
 """))
 
@@ -394,13 +394,13 @@ stacking_mod.fit(tr_df[base_features], y_tr)
 p_ens3 = stacking_mod.predict(va_df[base_features])
 sc_ens3 = compute_metrics(y_va, p_ens3)
 
-# 4. ENS4: Optimized Blend (0.90 LGBM + 0.10 Ridge)
-z_ens4 = 0.90 * z_m1 + 0.10 * z_m4
+# 4. ENS4: Optimized Blend (0.91 LGBM + 0.09 Ridge)
+z_ens4 = 0.91 * z_m1 + 0.09 * z_m4
 p_ens4 = np.clip(np.expm1(z_ens4), 0, None)
 sc_ens4 = compute_metrics(y_va, p_ens4)
 
 # 5. ENS5: Optimized Blend + Duan Smearing Adjustment
-resids_train_blend = np.log1p(y_tr) - (0.90 * m1_lgbm.predict_transformed(tr_df[base_features]) + 0.10 * np.log1p(m4_ridge.predict(tr_df)))
+resids_train_blend = np.log1p(y_tr) - (0.91 * m1_lgbm.predict_transformed(tr_df[base_features]) + 0.09 * np.log1p(m4_ridge.predict(tr_df)))
 duan_factor_blend = float(np.mean(np.exp(resids_train_blend)))
 
 p_ens5 = np.clip(np.exp(z_ens4) * duan_factor_blend - 1.0, 0, None)
@@ -433,7 +433,7 @@ ensemble_eval_df = pd.DataFrame([
     },
     {
         "Chiến lược Ensemble": "ENS4: Optimized Weighted Blend",
-        "Thành phần": "0.90 LightGBM Huber + 0.10 Linear Ridge",
+        "Thành phần": "0.91 LightGBM Huber + 0.09 Linear Ridge",
         "Smearing": "Không",
         "RMSLE": sc_ens4["rmsle"],
         "MAE (Tr. VND)": sc_ens4["mae"],
@@ -441,7 +441,7 @@ ensemble_eval_df = pd.DataFrame([
     },
     {
         "Chiến lược Ensemble": "ENS5: Optimized Blend + Duan Smearing (Kỷ lục mới)",
-        "Thành phần": "0.90 LightGBM Huber + 0.10 Linear Ridge",
+        "Thành phần": "0.91 LightGBM Huber + 0.09 Linear Ridge",
         "Smearing": f"Duan = {duan_factor_blend:.4f}",
         "RMSLE": sc_ens5["rmsle"],
         "MAE (Tr. VND)": sc_ens5["mae"],
@@ -460,18 +460,18 @@ cells.append(nbf.v4.new_code_cell("""fig, axes = plt.subplots(1, 2, figsize=(16,
 # Plot RMSLE
 sns.barplot(data=ensemble_eval_df, x="Chiến lược Ensemble", y="RMSLE", hue="Chiến lược Ensemble", legend=False, palette="mako", ax=axes[0])
 axes[0].axhline(m_base["rmsle"], color="red", linestyle="--", label=f"Baseline ({m_base['rmsle']:.4f})")
-axes[0].axhline(0.2631, color="orange", linestyle="-.", label="Ridge GĐ2 (0.2631)")
-axes[0].axhline(0.2129, color="blue", linestyle=":", label="Single Best GĐ4 (0.2129)")
+axes[0].axhline(0.1978, color="orange", linestyle="-.", label="Ridge GĐ2 (0.1978)")
+axes[0].axhline(0.1664, color="blue", linestyle=":", label="Single Best GĐ4 (0.1664)")
 axes[0].set_title("So sánh RMSLE giữa các Chiến lược Ensemble", fontsize=12, fontweight="bold")
 axes[0].set_xticklabels(axes[0].get_xticklabels(), rotation=45, ha="right")
-axes[0].set_ylim([0.19, 0.33])
+axes[0].set_ylim([0.15, 0.26])
 axes[0].legend()
 
 # Plot MAE
 sns.barplot(data=ensemble_eval_df, x="Chiến lược Ensemble", y="MAE (Tr. VND)", hue="Chiến lược Ensemble", legend=False, palette="rocket", ax=axes[1])
 axes[1].axhline(m_base["mae"], color="red", linestyle="--", label=f"Baseline ({m_base['mae']:.2f} M)")
-axes[1].axhline(3.75, color="orange", linestyle="-.", label="Ridge GĐ2 (3.75 M)")
-axes[1].axhline(2.88, color="blue", linestyle=":", label="Single Best GĐ4 (2.88 M)")
+axes[1].axhline(2.94, color="orange", linestyle="-.", label="Ridge GĐ2 (2.94 M)")
+axes[1].axhline(2.46, color="blue", linestyle=":", label="Single Best GĐ4 (2.46 M)")
 axes[1].set_title("So sánh MAE (Triệu VND)", fontsize=12, fontweight="bold")
 axes[1].set_xticklabels(axes[1].get_xticklabels(), rotation=45, ha="right")
 axes[1].legend()
@@ -483,17 +483,18 @@ plt.show()
 # Cell 15: Markdown Section 7
 cells.append(nbf.v4.new_markdown_cell("""## 7. Walk-Forward Backtesting qua các Fold Thời Gian
 
-Đánh giá tính ổn định của mô hình Ensemble tốt nhất trên cả 3 chu kỳ lịch sử:
+Đánh giá tính ổn định của mô hình Ensemble tốt nhất trên cả 4 chu kỳ lịch sử:
 - **Fold A (Q1/2025):** Train < 2025-01-01 $\\to$ Val Q1/2025
 - **Fold B (Q2/2025):** Train < 2025-04-01 $\\to$ Val Q2/2025
-- **Primary Val (Q3/2025):** Train < 2025-07-01 $\\to$ Val Q3/2025
+- **Fold C (Q3/2025):** Train < 2025-07-01 $\\to$ Val Q3/2025
+- **Primary Val (Q4/2025):** Train < 2025-10-01 $\\to$ Val Q4/2025
 """))
 
 # Cell 16: Code Section 7
 cells.append(nbf.v4.new_code_cell("""wf_records = []
-lin_score_dict = {"fold_a": 0.2874, "fold_b": 0.2367, "primary_val": 0.2631}
+lin_score_dict = {"fold_a": 0.2874, "fold_b": 0.2367, "fold_c": 0.2631, "primary_val": 0.1978}
 
-for fold_key in ["fold_a", "fold_b", "primary_val"]:
+for fold_key in ["fold_a", "fold_b", "fold_c", "primary_val"]:
     fold_cfg = WALK_FORWARD_FOLDS[fold_key]
     train_end = fold_cfg["train_end"]
     val_start = fold_cfg["val_start"]
@@ -501,7 +502,7 @@ for fold_key in ["fold_a", "fold_b", "primary_val"]:
 
     tr = featured_df[featured_df[DATE_COL] < train_end].copy()
     va = featured_df[(featured_df[DATE_COL] >= val_start) & (featured_df[DATE_COL] < val_end)].copy()
-    tr_f, va_f, _, _ = prepare_tree_feature_matrices(train_df=tr, val_df=va)
+    tr_f, va_f, _, _ = prepare_tree_feature_matrices(train_df=tr, val_df=va, test_df=None)
 
     # 1. Baseline
     b_mod = WeekdayMedianBaseline().fit(tr)
@@ -532,8 +533,8 @@ for fold_key in ["fold_a", "fold_b", "primary_val"]:
     z_ridge_f = np.log1p(p_ridge_f)
 
     # 5. Blend
-    z_blend_f = 0.90 * z_lgbm_f + 0.10 * z_ridge_f
-    r_tr_f = np.log1p(tr[TARGET_COL].values) - (0.90 * lgbm_fold.predict_transformed(tr_f[base_features]) + 0.10 * np.log1p(ridge_fold.predict(tr)))
+    z_blend_f = 0.91 * z_lgbm_f + 0.09 * z_ridge_f
+    r_tr_f = np.log1p(tr[TARGET_COL].values) - (0.91 * lgbm_fold.predict_transformed(tr_f[base_features]) + 0.09 * np.log1p(ridge_fold.predict(tr)))
     smear_f = float(np.mean(np.exp(r_tr_f)))
     p_blend_f = np.clip(np.exp(z_blend_f) * smear_f - 1.0, 0, None)
     blend_f_res = compute_metrics(va[TARGET_COL].values, p_blend_f)
@@ -555,7 +556,7 @@ display(wf_df)
 """))
 
 # Cell 17: Markdown Section 8
-cells.append(nbf.v4.new_markdown_cell("""## 8. Phân tích Chi tiết Lỗi theo Nhóm (Subgroup Analysis trên Q3/2025)"""))
+cells.append(nbf.v4.new_markdown_cell("""## 8. Phân tích Chi tiết Lỗi theo Nhóm (Subgroup Analysis trên Q4/2025)"""))
 
 # Cell 18: Code Section 8
 cells.append(nbf.v4.new_code_cell("""val_eval = va_df.copy()
@@ -611,7 +612,7 @@ lims = [0, 55]
 axes[1].plot(lims, lims, color="red", linestyle="--", label="Đường chuẩn y = x")
 axes[1].set_xlim(lims)
 axes[1].set_ylim(lims)
-axes[1].set_title("Doanh thu thực tế vs Dự báo Ensemble Tối ưu (Q3/2025)", fontsize=12, fontweight="bold")
+axes[1].set_title("Doanh thu thực tế vs Dự báo Ensemble Tối ưu (Q4/2025)", fontsize=12, fontweight="bold")
 axes[1].set_xlabel("Doanh thu thực tế (Triệu VND)")
 axes[1].set_ylabel("Doanh thu dự báo Ensemble (Triệu VND)")
 axes[1].legend()
@@ -625,16 +626,16 @@ cells.append(nbf.v4.new_markdown_cell("""## 10. Kết luận Toàn diện Giai �
 
 ### Thành tựu nổi bật:
 1. **Thiết lập Kỷ lục Cao nhất Toàn Dự án:**
-   - Baseline Giai đoạn 1: **RMSLE = 0.3101** | MAE = **4.31 triệu VND**
-   - Tuyến tính Ridge Giai đoạn 2: **RMSLE = 0.2631** | MAE = **3.75 triệu VND** (+15.16% vs Base)
-   - Tree-based LightGBM Giai đoạn 3: **RMSLE = 0.2163** | MAE = **2.92 triệu VND** (+30.25% vs Base)
-   - Target Transform Huber Giai đoạn 4: **RMSLE = 0.2129** | MAE = **2.88 triệu VND** (+31.34% vs Base)
-   - **Optimized Ensemble + Duan Smearing Giai đoạn 5:** **RMSLE = 0.2096** | **MAE = 2.81 triệu VND** (**+32.44% cải thiện vs Baseline!**)
+   - Baseline Giai đoạn 1: **RMSLE = 0.2392** | MAE = **3.57 triệu VND**
+   - Tuyến tính Ridge Giai đoạn 2: **RMSLE = 0.1978** | MAE = **2.94 triệu VND** (+18.96% vs Base)
+   - Tree-based LightGBM Giai đoạn 3: **RMSLE = 0.1667** | MAE = **2.49 triệu VND** (+30.28% vs Base)
+   - Target Transform Huber Giai đoạn 4: **RMSLE = 0.1664** | MAE = **2.46 triệu VND** (+30.43% vs Base)
+   - **Optimized Ensemble + Duan Smearing Giai đoạn 5:** **RMSLE = 0.1603** | **MAE = 2.33 triệu VND** (**+32.98% cải thiện vs Baseline!**)
 2. **Giải đáp Rõ ràng Câu hỏi về Lags (E4):**
    - Trong bài toán dự báo xa 90 ngày, việc dùng recursive lags không cải thiện so với việc khai thác các đặc trưng thống kê lịch sử tổng hợp out-of-fold tĩnh (`log_hist_sw_med`, `log_hist_s_med`).
    - Cấu hình không dùng recursive lags đảm bảo an toàn tuyệt đối trước rủi ro rò rỉ dữ liệu (zero leakage) và tránh hiện tượng tích lũy sai số đệ quy.
 3. **Thành công của Đa dạng hóa Mô hình (Model Diversity):**
-   - Kết hợp 90% LightGBM Huber Loss và 10% Linear Ridge Regression giúp mô hình cân bằng hoàn hảo giữa khả năng phân tách phi tuyến phức tạp và độ mượt mà ổn định toàn cục.
+   - Kết hợp 91% LightGBM Huber Loss và 9% Linear Ridge Regression cùng Duan's Smearing (+2.2%) giúp mô hình cân bằng hoàn hảo giữa khả năng phân tách phi tuyến phức tạp và độ mượt mà ổn định toàn cục, hạ MAE xuống chỉ còn 2.33 triệu VND/ngày.
 """))
 
 nb["cells"] = cells

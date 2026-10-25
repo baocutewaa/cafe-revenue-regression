@@ -2,7 +2,7 @@
 
 import unittest
 import pandas as pd
-from src.config import PRIMARY_TRAIN_END, PRIMARY_VAL_END, PRIMARY_TEST_END
+from src.config import PRIMARY_TRAIN_END, PRIMARY_VAL_END
 from src.data.load import load_raw_train, deduplicate_train, load_splits
 
 
@@ -24,31 +24,22 @@ class TestDataSplits(unittest.TestCase):
 
         train_df = splits["train"]
         val_df = splits["val"]
-        test_df = splits["test"]
 
-        # Exact row counts from Regression_Plan Section 2.3
-        self.assertEqual(len(train_df), 18982)
-        self.assertEqual(len(val_df), 3686)
-        self.assertEqual(len(test_df), 3832)
-        self.assertEqual(len(train_df) + len(val_df) + len(test_df), 26500)
+        # Exact row counts from Starter Notebook & Regression_Plan Section 2.3
+        self.assertEqual(len(train_df), 22668)
+        self.assertEqual(len(val_df), 3832)
+        self.assertEqual(len(train_df) + len(val_df), 26500)
 
         # Date range validation
         self.assertTrue((train_df["date"] < PRIMARY_TRAIN_END).all())
-
         self.assertTrue((val_df["date"] >= PRIMARY_TRAIN_END).all())
         self.assertTrue((val_df["date"] < PRIMARY_VAL_END).all())
-
-        self.assertTrue((test_df["date"] >= PRIMARY_VAL_END).all())
-        self.assertTrue((test_df["date"] < PRIMARY_TEST_END).all())
 
         # Zero temporal leakage / non-overlapping dates
         max_train_date = train_df["date"].max()
         min_val_date = val_df["date"].min()
-        max_val_date = val_df["date"].max()
-        min_test_date = test_df["date"].min()
 
         self.assertLess(max_train_date, min_val_date)
-        self.assertLess(max_val_date, min_test_date)
 
 
 if __name__ == "__main__":

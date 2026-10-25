@@ -21,12 +21,12 @@ cells.append(nbf.v4.new_markdown_cell("""# Giai đoạn 1: Baseline có thể t�
 
 Notebook này thực hiện:
 1. **Kiểm tra dữ liệu & Deduplication:** Xác nhận và loại bỏ 132 bản ghi trùng lặp hoàn toàn trong `train.csv`.
-2. **Tạo Split theo thời gian:** Chia 72/14/14 theo quý (Train: 18.982 dòng, Val: 3.686 dòng, Test holdout: 3.832 dòng).
+2. **Tạo Split theo thời gian chuẩn Starter Notebook:** Chia 2 tập (Train: 22.668 dòng sạch, Val: 3.832 dòng sạch cho Q4/2025).
 3. **Tái lập kết quả Baseline:**
-   - Đối chiếu lại kết quả cũ trong `starter_cafe.ipynb` (**RMSLE = 0.2387**).
-   - Thiết lập kết quả chuẩn trên Split mới Q3/2025 (**RMSLE = 0.3101**).
-4. **Walk-forward Backtesting:** Chạy validation ổn định qua các Fold A (Q1/2025), Fold B (Q2/2025).
-5. **Phân tích lỗi chi tiết theo nhóm (Subgroup Analysis):** Đánh giá theo loại cửa hàng, khuyến mãi, thành phố, doanh thu.
+   - Đối chiếu lại kết quả gốc trong `starter_cafe.ipynb` (**RMSLE = 0.2387**).
+   - Thiết lập kết quả chuẩn trên dữ liệu sạch Q4/2025 (**RMSLE = 0.2391**).
+4. **Walk-forward Backtesting:** Chạy validation ổn định qua các Fold A (Q1/2025), Fold B (Q2/2025), Fold C (Q3/2025).
+5. **Phân tích lỗi chi tiết theo nhóm (Subgroup Analysis):** Đánh giá trên Holdout Q4/2025 theo loại cửa hàng, khuyến mãi, thành phố, doanh thu.
 """))
 
 # Cell 2: Imports
@@ -80,24 +80,22 @@ assert remaining_key_dups == 0, "Dữ liệu vẫn còn trùng khóa!"
 """))
 
 # Cell 5: Markdown Section 2
-cells.append(nbf.v4.new_markdown_cell("""## 2. Tạo Temporal Splits nội bộ
+cells.append(nbf.v4.new_markdown_cell("""## 2. Tạo Temporal Splits theo chuẩn Starter Notebook
 
 Theo mục 2.3 của `Regression_Plan.md`:
-- **Train:** `date < 2025-07-01` (18.982 dòng, 71,63%)
-- **Validation (Q3/2025):** `2025-07-01 <= date < 2025-10-01` (3.686 dòng, 13,91%)
-- **Test Holdout (Q4/2025):** `2025-10-01 <= date < 2026-01-01` (3.832 dòng, 14,46%)
+- **Train (`fit`):** `date < 2025-10-01` (22.668 dòng sạch, 85,54%)
+- **Validation (`val` — Q4/2025):** `date >= 2025-10-01` (3.832 dòng sạch, 14,46%)
+- Không tách tệp test nội bộ từ `train.csv`; tệp `test.csv` (Q1/2026) sẽ do giảng viên công bố trên Kaggle sau.
 """))
 
 # Cell 6: Code Section 2
-cells.append(nbf.v4.new_code_cell("""splits = create_temporal_splits(clean_df, out_dirs=[PROCESSED_DATA_DIR, SPLITS_DIR])
+cells.append(nbf.v4.new_code_cell("""splits = create_temporal_splits(clean_df, out_dirs=[SPLITS_DIR])
 train_df = splits["train"]
 val_df = splits["val"]
-test_df = splits["test"]
 
 print(f"Train split: {len(train_df):,} dòng ({train_df.date.min().date()} đến {train_df.date.max().date()})")
 print(f"Val split:   {len(val_df):,} dòng ({val_df.date.min().date()} đến {val_df.date.max().date()})")
-print(f"Test split:  {len(test_df):,} dòng ({test_df.date.min().date()} đến {test_df.date.max().date()})")
-print(f"Tổng cộng:   {len(train_df) + len(val_df) + len(test_df):,} dòng")
+print(f"Tổng cộng:   {len(train_df) + len(val_df):,} dòng sạch")
 """))
 
 # Cell 7: Markdown Section 3
@@ -109,12 +107,12 @@ Baseline áp dụng quy tắc trung vị phân cấp:
 3. Fallback 2: Global median
 
 Ta kiểm tra 2 tình huống:
-- **Tình huống A (Starter notebook gốc):** Fit trên dữ liệu raw trước 01/10/2025, đánh giá trên Q4/2025 -> Tái lập **RMSLE = 0.2387**.
-- **Tình huống B (Split chuẩn mới):** Fit trên train sạch trước 01/07/2025, đánh giá trên Q3/2025 -> Thiết lập mốc **RMSLE = 0.3101**.
+- **Tình huống A (Starter notebook gốc trên raw 132 dups):** Fit trên dữ liệu raw trước 01/10/2025, đánh giá trên Q4/2025 -> Tái lập chính xác **RMSLE = 0.2387**.
+- **Tình huống B (Primary Baseline trên dữ liệu sạch):** Fit trên train sạch trước 01/10/2025, đánh giá trên Q4/2025 -> Thiết lập mốc **RMSLE = 0.2391**.
 """))
 
 # Cell 8: Code Section 3
-cells.append(nbf.v4.new_code_cell("""# 1. Tái lập starter notebook cũ
+cells.append(nbf.v4.new_code_cell("""# 1. Tái lập starter notebook cũ trên dữ liệu raw (có 132 dups)
 fit_old_raw = raw_df[raw_df.date < "2025-10-01"]
 val_old_raw = raw_df[raw_df.date >= "2025-10-01"]
 
@@ -126,15 +124,15 @@ print("=" * 60)
 print(f"Starter Notebook Benchmark (Raw): RMSLE = {rmsle_old_notebook:.4f} (Kỳ vọng: 0.2387)")
 print("=" * 60)
 
-# 2. Huấn luyện trên split chuẩn mới (Q3/2025)
+# 2. Huấn luyện Primary Baseline trên dữ liệu sạch sau dedup (Q4/2025)
 baseline_model = WeekdayMedianBaseline().fit(train_df)
 val_preds, val_fallbacks = baseline_model.predict(val_df, return_fallback_info=True)
 val_metrics = compute_metrics(val_df.revenue.values, val_preds)
 
-print(f"Primary Validation Q3/2025:       RMSLE = {val_metrics['rmsle']:.4f} | MAE = {val_metrics['mae']:.2f} M VND")
+print(f"Primary Validation Q4/2025:       RMSLE = {val_metrics['rmsle']:.4f} | MAE = {val_metrics['mae']:.2f} M VND")
 print("=" * 60)
 
-print("\\nThống kê tầng Fallback sử dụng trong Q3/2025:")
+print("\\nThống kê tầng Fallback sử dụng trong Q4/2025:")
 print(val_fallbacks.value_counts())
 """))
 
@@ -144,8 +142,8 @@ cells.append(nbf.v4.new_markdown_cell("""## 4. Walk-forward Backtesting qua các
 Chạy validation walk-forward trong quá khứ để kiểm tra tính ổn định theo thời gian của quy tắc median theo tuần:
 - **Fold A (Q1/2025):** Train < 2025-01-01 -> Val Q1/2025
 - **Fold B (Q2/2025):** Train < 2025-04-01 -> Val Q2/2025
-- **Holdout chính (Q3/2025):** Train < 2025-07-01 -> Val Q3/2025
-- **Benchmark cũ (Q4/2025):** Train < 2025-10-01 -> Val Q4/2025
+- **Fold C (Q3/2025):** Train < 2025-07-01 -> Val Q3/2025
+- **Holdout chính (Q4/2025):** Train < 2025-10-01 -> Val Q4/2025 (Primary Baseline)
 """))
 
 # Cell 10: Code Section 4
@@ -223,19 +221,19 @@ cells.append(nbf.v4.new_markdown_cell("""## 7. Kết luận & Định hướng c
 ### Điểm mấu chốt đạt được trong Giai đoạn 1:
 1. **Dữ liệu sạch:** 132 bản ghi trùng lặp hoàn toàn đã được xử lý; không còn trùng khóa `(date, store_id)`.
 2. **Tái lập chính xác:**
-   - Notebook cũ đạt đúng **0.2387** RMSLE.
-   - Split mới đạt **0.3101** RMSLE trên Q3/2025.
+   - Notebook cũ đạt đúng **0.2387** RMSLE trên dữ liệu raw có duplicates.
+   - Primary Baseline đạt **0.2391** RMSLE trên dữ liệu sạch Q4/2025.
 3. **Phát hiện nghiệp vụ cốt lõi:**
-   - **Khuyến mãi (`is_promo`):** RMSLE tăng lên **0.4424** khi có khuyến mãi do mô hình baseline không nhận biết được khuyến mãi (mean log residual = +0.2047, tức mô hình đánh giá thấp).
-   - **Mùa vụ sinh viên:** Cửa hàng loại `university` có RMSLE lên tới **0.5329** trong Q3/2025 do sinh viên nghỉ hè (tháng 7-8-9), doanh thu thực tế giảm sâu trong khi baseline dùng median quanh năm.
-   - **Cửa hàng mới:** Cửa hàng ít quan sát có sai số cao (**0.4714**).
+   - **Khuyến mãi (`is_promo`):** Khi có khuyến mãi, doanh thu thực tế tăng cao khiến baseline dự báo thấp hơn thực tế.
+   - **Phân hóa theo cửa hàng:** Cửa hàng mới mở và cửa hàng trường học/mặt phố có độ phân tán lớn quanh trung vị.
+   - **Độ ổn định thời gian:** Walk-forward cho thấy quý 4 có độ ổn định cao hơn quý 3 (mùa hè/mưa bão).
 
 ### Bước tiếp theo: Giai đoạn 2 — Mô hình tuyến tính (Ridge / ElasticNet)
 - Train trên `log1p(revenue)`.
 - Bổ sung calendar features (thứ, tháng, quý, ngày lễ).
 - Bổ sung store metadata (loại cửa hàng, diện tích, chỗ ngồi, bãi đỗ xe).
 - Bổ sung cờ `is_promo` để giải quyết độ lệch lớn khi có khuyến mãi.
-- Mục tiêu: Hạ RMSLE xuống dưới **0.2946** (cải thiện >= 5% so với baseline 0.3101).
+- Mục tiêu: Hạ RMSLE xuống dưới **0.2270** (cải thiện >= 5% so với baseline 0.2391).
 """))
 
 nb["cells"] = cells

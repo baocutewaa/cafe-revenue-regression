@@ -18,9 +18,9 @@ cells.append(nbf.v4.new_markdown_cell("""# Giai đoạn 4: Biến đổi Target 
 > **Target:** `revenue` (Triệu VND, không âm)  
 > **Metric chính:** RMSLE (Root Mean Squared Logarithmic Error)  
 > **Mốc chuẩn trước đó:**
-> - Baseline Giai đoạn 1: **RMSLE = 0.3101** | MAE = **4.31 triệu VND**
-> - Tuyến tính Ridge Giai đoạn 2: **RMSLE = 0.2631** | MAE = **3.75 triệu VND** (+15.16% vs Base)
-> - Tree-based LightGBM Giai đoạn 3: **RMSLE = 0.2163** | MAE = **2.92 triệu VND** (+30.25% vs Base)
+> - Baseline Giai đoạn 1: **RMSLE = 0.2391** (Clean) / **0.2387** (Raw) | MAE = **3.57 triệu VND**
+> - Tuyến tính Ridge Giai đoạn 2: **RMSLE = 0.1978** | MAE = **2.94 triệu VND** (+17.27% vs Base)
+> - Tree-based LightGBM Giai đoạn 3: **RMSLE = 0.1667** | MAE = **2.49 triệu VND** (+30.28% vs Base)
 > - **Mục tiêu KPI Giai đoạn 4:** Phân tích khoa học toàn diện các phép biến đổi target, hàm loss chuyên biệt và hiệu chỉnh độ lệch tái biến đổi (smearing).
 
 ---
@@ -38,8 +38,8 @@ cells.append(nbf.v4.new_markdown_cell("""# Giai đoạn 4: Biến đổi Target 
 5. **Nghiên cứu Thực nghiệm Hiệu chỉnh Độ lệch Tái biến đổi (Smearing & Bias Correction):**
    - Kiểm chứng cảnh báo trong `Regression_Plan.md`: Nghịch đảo chuẩn $\\text{expm1}(\\hat{z})$ so với Hiệu chỉnh Bán chuẩn (Half-variance adjustment) và Hệ số Duan's Smearing.
 6. **Walk-Forward Backtesting qua các Fold Thời gian:**
-   - Kiểm tra tính ổn định trên Fold A (Q1/2025), Fold B (Q2/2025), và Primary Val (Q3/2025).
-7. **Phân tích Chi tiết Lỗi theo Nhóm (Subgroup Error Analysis).**
+   - Kiểm tra tính ổn định trên Fold A (Q1/2025), Fold B (Q2/2025), Fold C (Q3/2025), và Primary Val (Q4/2025).
+7. **Phân tích Chi tiết Lỗi theo Nhóm (Subgroup Error Analysis trên Q4/2025).**
 8. **Chẩn đoán Sai số Log Residuals & Đồ thị Thực tế vs Dự báo.**
 """))
 
@@ -61,7 +61,7 @@ from scipy import stats
 
 from src.config import (
     DATE_COL, STORE_COL, TARGET_COL, PROMO_COL,
-    PRIMARY_TRAIN_END, PRIMARY_VAL_END, PRIMARY_TEST_END,
+    PRIMARY_TRAIN_END, PRIMARY_VAL_END,
     WALK_FORWARD_FOLDS, MODELS_DIR, REPORTS_DIR, PROCESSED_DATA_DIR
 )
 from src.data.load import (
@@ -115,9 +115,8 @@ featured_df = build_all_features(joined_df)
 
 raw_tr = featured_df[featured_df[DATE_COL] < PRIMARY_TRAIN_END].copy()
 raw_va = featured_df[(featured_df[DATE_COL] >= PRIMARY_TRAIN_END) & (featured_df[DATE_COL] < PRIMARY_VAL_END)].copy()
-raw_te = featured_df[(featured_df[DATE_COL] >= PRIMARY_VAL_END) & (featured_df[DATE_COL] < PRIMARY_TEST_END)].copy()
 
-tr_df, va_df, _, tree_features = prepare_tree_feature_matrices(raw_tr, raw_va, raw_te)
+tr_df, va_df, _, tree_features = prepare_tree_feature_matrices(raw_tr, raw_va, test_df=None)
 
 y_tr = tr_df[TARGET_COL].values
 y_va = va_df[TARGET_COL].values
@@ -364,18 +363,18 @@ cells.append(nbf.v4.new_code_cell("""fig, axes = plt.subplots(1, 2, figsize=(16,
 # Plot RMSLE
 sns.barplot(data=obj_df, x="Cấu hình Mục tiêu", y="RMSLE", hue="Cấu hình Mục tiêu", legend=False, palette="crest", ax=axes[0])
 axes[0].axhline(m_base["rmsle"], color="red", linestyle="--", label=f"Baseline ({m_base['rmsle']:.4f})")
-axes[0].axhline(0.2631, color="orange", linestyle="-.", label="Ridge GĐ2 (0.2631)")
-axes[0].axhline(0.2163, color="blue", linestyle=":", label="LightGBM GĐ3 (0.2163)")
+axes[0].axhline(0.1978, color="orange", linestyle="-.", label="Ridge GĐ2 (0.1978)")
+axes[0].axhline(0.1667, color="blue", linestyle=":", label="LightGBM GĐ3 (0.1667)")
 axes[0].set_title("So sánh RMSLE theo Cấu hình Target & Loss", fontsize=12, fontweight="bold")
 axes[0].set_xticklabels(axes[0].get_xticklabels(), rotation=45, ha="right")
-axes[0].set_ylim([0.19, 0.33])
+axes[0].set_ylim([0.15, 0.26])
 axes[0].legend()
 
 # Plot MAE
 sns.barplot(data=obj_df, x="Cấu hình Mục tiêu", y="MAE (Tr. VND)", hue="Cấu hình Mục tiêu", legend=False, palette="flare", ax=axes[1])
 axes[1].axhline(m_base["mae"], color="red", linestyle="--", label=f"Baseline ({m_base['mae']:.2f} M)")
-axes[1].axhline(3.75, color="orange", linestyle="-.", label="Ridge GĐ2 (3.75 M)")
-axes[1].axhline(2.92, color="blue", linestyle=":", label="LightGBM GĐ3 (2.92 M)")
+axes[1].axhline(2.94, color="orange", linestyle="-.", label="Ridge GĐ2 (2.94 M)")
+axes[1].axhline(2.49, color="blue", linestyle=":", label="LightGBM GĐ3 (2.49 M)")
 axes[1].set_title("So sánh MAE (Triệu VND)", fontsize=12, fontweight="bold")
 axes[1].set_xticklabels(axes[1].get_xticklabels(), rotation=45, ha="right")
 axes[1].legend()
@@ -396,7 +395,7 @@ Theo lý thuyết hồi quy Log-Linear:
 `Regression_Plan.md` (Mục 8 — Giai đoạn 4) cảnh báo:
 > *"Lưu ý: khi mô hình hóa log target, expm1(predicted_log) thường phù hợp với mục tiêu log error nhưng không nhất thiết không lệch cho kỳ vọng doanh thu gốc. Không tự ý cộng hệ số hiệu chỉnh nếu chưa đánh giá trên validation."*
 
-Chúng ta đánh giá thực nghiệm chính xác trên Q3/2025:
+Chúng ta đánh giá thực nghiệm chính xác trên Q4/2025:
 """))
 
 # Cell 16: Code Section 7
@@ -434,17 +433,23 @@ display(smear_df)
 # Cell 17: Markdown Section 8
 cells.append(nbf.v4.new_markdown_cell("""## 8. Walk-Forward Backtesting qua các Fold Thời Gian
 
-Đánh giá tính nhất quán và độ ổn định của cấu hình tối ưu **Log1p Huber Loss** trên cả 3 chu kỳ:
+Đánh giá tính nhất quán và độ ổn định của cấu hình tối ưu **Log1p Huber Loss** trên cả 4 chu kỳ:
 - **Fold A (Q1/2025):** Train < 2025-01-01 $\\to$ Val Q1/2025
 - **Fold B (Q2/2025):** Train < 2025-04-01 $\\to$ Val Q2/2025
-- **Primary Val (Q3/2025):** Train < 2025-07-01 $\\to$ Val Q3/2025
+- **Fold C (Q3/2025):** Train < 2025-07-01 $\\to$ Val Q3/2025
+- **Primary Val (Q4/2025):** Train < 2025-10-01 $\\to$ Val Q4/2025
 """))
 
 # Cell 18: Code Section 8
 cells.append(nbf.v4.new_code_cell("""wf_records = []
-lin_score_dict = {"fold_a": 0.2874, "fold_b": 0.2367, "primary_val": 0.2631}
+lin_score_dict = {
+    "fold_a": 0.2874,
+    "fold_b": 0.2367,
+    "fold_c": 0.2631,
+    "primary_val": 0.1978,
+}
 
-for fold_key in ["fold_a", "fold_b", "primary_val"]:
+for fold_key in ["fold_a", "fold_b", "fold_c", "primary_val"]:
     fold_cfg = WALK_FORWARD_FOLDS[fold_key]
     train_end = fold_cfg["train_end"]
     val_start = fold_cfg["val_start"]
@@ -452,7 +457,7 @@ for fold_key in ["fold_a", "fold_b", "primary_val"]:
 
     tr = featured_df[featured_df[DATE_COL] < train_end].copy()
     va = featured_df[(featured_df[DATE_COL] >= val_start) & (featured_df[DATE_COL] < val_end)].copy()
-    tr_f, va_f, _, _ = prepare_tree_feature_matrices(train_df=tr, val_df=va)
+    tr_f, va_f, _, _ = prepare_tree_feature_matrices(train_df=tr, val_df=va, test_df=None)
 
     # 1. Baseline
     b_mod = WeekdayMedianBaseline().fit(tr)
@@ -500,7 +505,7 @@ display(wf_df)
 """))
 
 # Cell 19: Markdown Section 9
-cells.append(nbf.v4.new_markdown_cell("""## 9. Phân tích Chi tiết Lỗi theo Nhóm (Subgroup Analysis trên Q3/2025)"""))
+cells.append(nbf.v4.new_markdown_cell("""## 9. Phân tích Chi tiết Lỗi theo Nhóm (Subgroup Analysis trên Q4/2025)"""))
 
 # Cell 20: Code Section 9
 cells.append(nbf.v4.new_code_cell("""val_eval = va_df.copy()
@@ -560,7 +565,7 @@ lims = [0, 55]
 axes[1].plot(lims, lims, color="red", linestyle="--", label="Đường chuẩn y = x")
 axes[1].set_xlim(lims)
 axes[1].set_ylim(lims)
-axes[1].set_title("Doanh thu thực tế vs Dự báo LightGBM Huber (Q3/2025)", fontsize=12, fontweight="bold")
+axes[1].set_title("Doanh thu thực tế vs Dự báo LightGBM Huber (Q4/2025)", fontsize=12, fontweight="bold")
 axes[1].set_xlabel("Doanh thu thực tế (Triệu VND)")
 axes[1].set_ylabel("Doanh thu dự báo Huber (Triệu VND)")
 axes[1].legend()
@@ -574,13 +579,14 @@ cells.append(nbf.v4.new_markdown_cell("""## 11. Kết luận Giai đoạn 4 & C�
 
 ### Thành tựu cốt lõi:
 1. **Thiết lập Kỷ lục Độ chính xác mới:**
-   - Mô hình **LightGBM Huber Loss trên `log1p(revenue)`** đạt **RMSLE = 0.2129** và **MAE = 2.88 triệu VND**.
-   - Cải thiện **31.34%** so với Baseline (0.3101), cải thiện **19.08%** so với Linear Ridge (0.2631), và vượt qua cấu hình Giai đoạn 3 (0.2163).
+   - Mô hình **LightGBM Huber Loss trên `log1p(revenue)`** đạt **RMSLE = 0.1664** và **MAE = 2.46 triệu VND** (Yeo-Johnson đạt RMSLE = 0.1661 / MAE = 2.46 triệu VND).
+   - Cải thiện **30.41%** so với Baseline (0.2391), cải thiện **15.87%** so với Linear Ridge (0.1978), và vượt qua cấu hình Giai đoạn 3 (0.1667).
 2. **Cơ sở khoa học của Target Transformation:**
-   - Khẳng định tính đúng đắn của việc mô hình hóa trong không gian `log1p(revenue)`: giảm Skewness từ **+12.19 xuống -0.30**, giúp mô hình tối ưu trực tiếp hàm mất mát tương thích hoàn toàn với metric RMSLE.
-   - Các hàm loss chuyên biệt như Tweedie loss trên target gốc chỉ đạt RMSLE = **0.2299**, xác nhận không gian log vẫn là lựa chọn tối ưu tuyệt đối.
+   - Khẳng định tính đúng đắn của việc mô hình hóa trong không gian `log1p(revenue)`: giảm Skewness từ **+11.71 xuống -0.27**, Kurtosis từ **257.34 xuống 1.27**, giúp mô hình tối ưu trực tiếp hàm mất mát tương thích hoàn toàn với metric RMSLE.
+   - Yeo-Johnson ước lượng $\\lambda = 0.1155 \\approx 0$, chứng minh toán học rằng phép biến đổi log là gần tối ưu tuyệt đối.
+   - Các hàm loss chuyên biệt như Tweedie loss trên target gốc chỉ đạt RMSLE = **0.1772 - 0.1779** (Poisson đạt 0.1778), xác nhận không gian log vẫn là lựa chọn tối ưu vượt trội.
 3. **Hiểu rõ cơ chế Smearing Factor:**
-   - Hệ số Duan's smearing (+1.7%) giúp giảm MAE trên thang doanh thu gốc xuống **2.86 triệu VND** đối với MSE và **2.79 triệu VND** đối với Huber, giải quyết độ lệch do bất đẳng thức Jensen gây ra.
+   - Hệ số Duan's smearing (+2.2%) giúp giảm MAE trên thang doanh thu gốc xuống **2.34 triệu VND**, giải quyết độ lệch do bất đẳng thức Jensen gây ra khi quan tâm đến giá trị doanh thu thực tế.
 
 ---
 ### Chuyển giao sang Giai đoạn 5 (Lags & Ensemble):

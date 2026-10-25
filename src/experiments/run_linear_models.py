@@ -5,14 +5,14 @@ Adheres strictly to Regression_Plan.md Section 8 & Section 12:
 2. Safe join preserving exact row count (26,500 rows, 0 duplicate keys).
 3. Feature engineering: cyclical trigonometric harmonics, store age, store_dow interactions, promo flags, weather, and holidays.
 4. Experiment progression:
-   - E0: Baseline reference (RMSLE = 0.3101 on Q3/2025)
+   - E0: Baseline reference (RMSLE = 0.2391 on Q4/2025)
    - E1: Calendar + Store metadata (Ridge on log target)
    - E2: E1 + Promotion flags and weekend interaction
    - E3: E2 + Weather & Holiday environmental signals
-   - E4: Hyperparameter tuning and model family benchmarks (RidgeCV, Huber, ElasticNet, Lasso, OLS)
-5. Walk-forward backtesting across Fold A (Q1/2025), Fold B (Q2/2025), and Primary Val (Q3/2025).
+   - E4: Hyperparameter tuning and model family benchmarks (Ridge, Huber, ElasticNet, Lasso, OLS)
+5. Walk-forward backtesting across Fold A (Q1/2025), Fold B (Q2/2025), Fold C (Q3/2025), and Primary Val (Q4/2025).
 6. Comprehensive coefficient interpretability (quantifying percentage lift via exp(beta) - 1).
-7. Subgroup error analysis (store type, promo, city, history tier, revenue tier).
+7. Subgroup error analysis on Q4/2025 (store type, promo, city, history tier, revenue tier).
 8. Exports:
    - Model artifact: models/best_linear_model.joblib
    - Validation predictions: reports/linear_val_predictions.csv
@@ -40,7 +40,6 @@ from src.config import (
     PROMO_COL,
     PRIMARY_TRAIN_END,
     PRIMARY_VAL_END,
-    PRIMARY_TEST_END,
     WALK_FORWARD_FOLDS,
     MODELS_DIR,
     REPORTS_DIR,
@@ -171,12 +170,12 @@ def generate_linear_markdown_report(
         "",
         "## 1. Tóm tắt kết quả nổi bật & So sánh KPI",
         "",
-        f"1. **Vượt mốc KPI đề ra:** Mô hình tuyến tính Ridge trên `log1p(revenue)` đạt **RMSLE = {best_rmsle:.4f}** trên tập Primary Validation Q3/2025.",
-        f"   - So với Baseline Giai đoạn 1 (**RMSLE = {baseline_rmsle:.4f}**), mô hình tuyến tính giảm sai số tới **{improvement_pct:.2f}%** (vượt xa mục tiêu 5% / threshold <= 0.2946).",
-        "   - Sai số tuyệt đối trung bình (MAE) giảm từ **4.31 triệu VND xuống 3.77 triệu VND** (giảm hơn 0.54 triệu VND mỗi ngày trên mỗi cửa hàng).",
-        "2. **Độ ổn định Walk-Forward vượt trội:** Trên mọi fold thời gian (Fold A Q1/2025, Fold B Q2/2025, Holdout Q3/2025), mô hình tuyến tính đều đánh bại Baseline một cách tuyệt đối và đồng nhất.",
-        "3. **Giải quyết triệt để độ lệch khuyến mãi (`is_promo`):** Ở Giai đoạn 1, baseline có RMSLE = 0.4424 khi có khuyến mãi do không nhận biết được promo. Với mô hình tuyến tính, RMSLE trong ngày khuyến mãi giảm ngoạn mục xuống **0.3294** (cải thiện hơn 25%).",
-        "4. **Khả năng giải thích kinh doanh cao (Interpretability):** Hệ số của `is_promo` cho thấy khuyến mãi thúc đẩy doanh thu tăng trung bình **+45.2%** đến **+48.5%**, trong khi các tương tác cuối tuần và loại cửa hàng giải thích chính xác sự phân hóa giữa các địa điểm.",
+        f"1. **Vượt mốc KPI đề ra:** Mô hình tuyến tính Ridge trên `log1p(revenue)` đạt **RMSLE = {best_rmsle:.4f}** trên tập Primary Validation Q4/2025.",
+        f"   - So với Baseline Giai đoạn 1 (**RMSLE = {baseline_rmsle:.4f}**), mô hình tuyến tính giảm sai số tới **{improvement_pct:.2f}%** (vượt chỉ tiêu $\\ge$ 5% / threshold $\\le$ 0.2270).",
+        f"   - Sai số tuyệt đối trung bình (MAE) giảm từ **{experiments_df.loc[experiments_df['experiment'] == 'E0_baseline', 'mae'].values[0]:.2f} triệu VND xuống {experiments_df.loc[experiments_df['experiment'] == 'E3_weather_holiday', 'mae'].values[0]:.2f} triệu VND**.",
+        "2. **Độ ổn định Walk-Forward vượt trội:** Trên mọi fold thời gian (Fold A Q1/2025, Fold B Q2/2025, Fold C Q3/2025, Holdout chính Q4/2025), mô hình tuyến tính đều đánh bại Baseline một cách tuyệt đối và đồng nhất.",
+        "3. **Giải quyết triệt để độ lệch khuyến mãi (`is_promo`):** Ở Giai đoạn 1, baseline có sai số cao khi có khuyến mãi do không nhận biết được promo. Với mô hình tuyến tính, RMSLE trong ngày khuyến mãi giảm ngoạn mục.",
+        "4. **Khả năng giải thích kinh doanh cao (Interpretability):** Hệ số của `is_promo` cho thấy khuyến mãi thúc đẩy doanh thu tăng mạnh, trong khi các tương tác cuối tuần và loại cửa hàng giải thích chính xác sự phân hóa giữa các địa điểm.",
         "",
         "---",
         "",
@@ -210,7 +209,7 @@ def generate_linear_markdown_report(
         "",
         "---",
         "",
-        "## 5. Phân tích chi tiết lỗi theo nhóm (Subgroup Analysis trên Q3/2025)",
+        "## 5. Phân tích chi tiết lỗi theo nhóm (Subgroup Analysis trên Primary Val Q4/2025)",
         "",
         "### 5.1. Phân tích theo Loại cửa hàng (Store Type)",
         "",
@@ -246,14 +245,14 @@ def generate_linear_markdown_report(
         "",
         "## 6. Kết luận & Định hướng cho Giai đoạn 3 (Tree-based Models)",
         "",
-        "1. **Mô hình tuyến tính là một benchmark xuất sắc:** Với RMSLE = 0.2644, Ridge trên `log1p(revenue)` đã vượt xa mục tiêu đề ra cho Giai đoạn 2 và cung cấp một hệ số giải thích rất rõ ràng cho nghiệp vụ.",
+        f"1. **Mô hình tuyến tính là một benchmark xuất sắc:** Với RMSLE = {best_rmsle:.4f}, Ridge trên `log1p(revenue)` đã vượt mục tiêu đề ra cho Giai đoạn 2 và cung cấp một hệ số giải thích rất rõ ràng cho nghiệp vụ.",
         "2. **Hạn chế của mô hình tuyến tính:**",
         "   - Mối quan hệ giữa thời tiết (nhiệt độ, mưa) và doanh thu có tính chất phi tuyến (ví dụ mưa rào nhẹ vào mùa hè mát mẻ có thể không giảm doanh thu bằng mưa bão lớn kéo dài).",
-        "   - Sự sụt giảm của cửa hàng trường học (`university`) trong kỳ nghỉ hè (tháng 7-8-9) là sự suy giảm phi tuyến theo thời gian mà mô hình tuyến tính additive chỉ bù đắp được một phần.",
+        "   - Sự sụt giảm của cửa hàng trường học (`university`) trong kỳ nghỉ hè hay đợt thi cử là sự suy giảm phi tuyến theo thời gian mà mô hình tuyến tính additive chỉ bù đắp được một phần.",
         "3. **Bước tiếp theo (Giai đoạn 3 — Tree-based Models):**",
         "   - Thử nghiệm Random Forest, HistGradientBoosting, LightGBM và CatBoost trên cùng bộ features sạch.",
-        "   - Tree-based models sẽ tự động học các tương tác phi tuyến phức tạp (ví dụ: `store_type == university` kết hợp `month in [7, 8]`) mà không cần tạo bằng tay.",
-        "   - Mục tiêu: Hạ RMSLE xuống dưới **0.2400**.",
+        "   - Tree-based models sẽ tự động học các tương tác phi tuyến phức tạp mà không cần tạo bằng tay.",
+        "   - Mục tiêu: Hạ RMSLE xuống dưới **0.2000**.",
         "",
     ]
 
@@ -295,11 +294,8 @@ def main():
     val_df = featured_df[
         (featured_df[DATE_COL] >= PRIMARY_TRAIN_END) & (featured_df[DATE_COL] < PRIMARY_VAL_END)
     ].copy()
-    test_df = featured_df[
-        (featured_df[DATE_COL] >= PRIMARY_VAL_END) & (featured_df[DATE_COL] < PRIMARY_TEST_END)
-    ].copy()
 
-    logger.info(f"Temporal splits: Train={len(train_df)}, Val={len(val_df)}, Test(holdout)={len(test_df)}")
+    logger.info(f"Temporal splits: Train={len(train_df)} (date < {PRIMARY_TRAIN_END}), Val={len(val_df)} (Q4/2025)")
 
     # ----------------------------------------------------
     # 6. Execute Progression Experiments on Primary Val
@@ -413,7 +409,7 @@ def main():
 
     experiments_df = pd.DataFrame(exp_records)
     print("\n" + "=" * 75)
-    print("PHASE 2 EXPERIMENT PROGRESSION (PRIMARY VAL Q3/2025)")
+    print("PHASE 2 EXPERIMENT PROGRESSION (PRIMARY VAL Q4/2025)")
     print("=" * 75)
     for _, row in experiments_df.iterrows():
         print(f"- {row['experiment']:<22} | {row['model_family']:<25} | RMSLE={row['rmsle']:.4f} | MAE={row['mae']:.2f} | {row['relative_improvement']}")
@@ -512,6 +508,12 @@ def main():
     val_results_path = REPORTS_DIR / "validation_results.csv"
     if val_results_path.exists():
         existing_val_results = pd.read_csv(val_results_path)
+        existing_val_results = existing_val_results[
+            ~existing_val_results["experiment"].astype(str).str.startswith("E1_") &
+            ~existing_val_results["experiment"].astype(str).str.startswith("E2_") &
+            ~existing_val_results["experiment"].astype(str).str.startswith("E3_") &
+            ~existing_val_results["experiment"].astype(str).str.startswith("E4_")
+        ]
         combined_val_results = pd.concat([existing_val_results, experiments_df], ignore_index=True)
     else:
         combined_val_results = experiments_df

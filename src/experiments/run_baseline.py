@@ -3,12 +3,12 @@
 Workflow:
 1. Loads raw dataset from data/raw/
 2. Audits and removes 132 exact duplicates
-3. Generates 3-way time-based splits (Train: 18,982, Val: 3,686, Test: 3,832)
-4. Fits WeekdayMedianBaseline on Train (date < 2025-07-01)
-5. Generates predictions & residuals on Primary Val (Q3/2025)
+3. Generates 2-way temporal split matching Starter Notebook (Train: 22,668, Val: 3,832)
+4. Fits WeekdayMedianBaseline on Train (date < 2025-10-01)
+5. Generates predictions & residuals on Primary Val (Q4/2025)
 6. Serializes model artifact to models/baseline_median.json
-7. Runs walk-forward validation across all folds (Fold A, Fold B, Primary Val, Notebook Benchmarks)
-8. Generates subgroup error analysis
+7. Runs walk-forward validation across all folds (Fold A, Fold B, Fold C, Primary Val Q4, Starter Raw Benchmark)
+8. Generates subgroup error analysis on Q4/2025
 9. Exports reports/validation_results.csv, predictions CSV, and reports/baseline_report.md
 """
 
@@ -92,12 +92,12 @@ def generate_baseline_markdown_report(
         f"   - Tổng số dòng sạch: **{clean_count:,}** dòng.",
         "   - Sau khi deduplicate, không còn bất kỳ khóa `(date, store_id)` nào bị trùng lặp.",
         "",
-        "2. **Tái lập Metric theo Regression_Plan.md:**",
-        "   - **Notebook cũ (trên dữ liệu gốc với 132 duplicates, fit < 2025-10-01, val Q4/2025):** Tái lập chính xác **RMSLE = 0.2387** (khớp hoàn toàn với notebook `starter_cafe.ipynb`).",
-        "   - **Notebook cũ (sau khi dedup):** **RMSLE = 0.2391**.",
-        "   - **Split chuẩn mới (fit < 2025-07-01, val Q3/2025):** Tái lập chính xác **RMSLE = 0.3101** (khớp mục tiêu đề ra tại Section 3.3 và 8 trong `Regression_Plan.md`).",
+        "2. **Tái lập Metric đồng bộ Starter Notebook (`starter_cafe.ipynb`):**",
+        "   - **Primary Baseline (fit < 2025-10-01, val Q4/2025 trên dữ liệu sạch):** **RMSLE = 0.2391** | **MAE = 3.57 triệu VND**.",
+        "   - **Notebook Benchmark (fit < 2025-10-01, val Q4/2025 trên dữ liệu thô 132 dups):** Tái lập chính xác **RMSLE = 0.2387** (khớp 100% với `starter_cafe.ipynb`).",
         "   - **Fold A (fit < 2025-01-01, val Q1/2025):** **RMSLE = 0.3037**.",
         "   - **Fold B (fit < 2025-04-01, val Q2/2025):** **RMSLE = 0.2684**.",
+        "   - **Fold C (fit < 2025-07-01, val Q3/2025):** **RMSLE = 0.3101**.",
         "",
         "---",
         "",
@@ -108,7 +108,7 @@ def generate_baseline_markdown_report(
         "",
         "---",
         "",
-        "## 3. Phân tích chi tiết lỗi theo nhóm (Subgroup Analysis trên Q3/2025)",
+        "## 3. Phân tích chi tiết lỗi theo nhóm (Subgroup Analysis trên Primary Val Q4/2025)",
         "",
         "### 3.1. Theo Thành phố",
         "",
@@ -167,7 +167,7 @@ def generate_baseline_markdown_report(
         "1. **Hiệu ứng khuyến mãi (`is_promo`):** Baseline hiện tại không dùng feature `is_promo`. Khi có khuyến mãi, doanh thu thực tế tăng vọt khiến baseline dự báo thấp hơn đáng kể (mean log residual dương lớn). Việc tích hợp promo feature ở Giai đoạn 2 & 3 sẽ đem lại bước nhảy vọt hiệu năng.",
         "2. **Độ biến thiên theo loại cửa hàng:** Các cửa hàng văn phòng (`office`) và trường học (`university`) có tính chu kỳ tuần rất rõ rệt; trong khi cửa hàng mặt phố (`street`) và trung tâm thương mại (`mall`) chịu ảnh hưởng mạnh hơn bởi thời tiết và ngày nghỉ lễ.",
         "3. **Cửa hàng có lịch sử ngắn:** Cửa hàng mới mở trong giai đoạn train có ít mẫu quan sát nên median weekday chưa hội tụ. Cần dùng hierarchical shrinkage hoặc Bayesian target encoding ở các giai đoạn sau.",
-        "4. **Mục tiêu Giai đoạn 2 (Linear Models):** Xây dựng Ridge / ElasticNet trên `log1p(revenue)` kết hợp calendar features và store metadata để vượt mốc baseline 0.3101 (mục tiêu <= 0.2946).",
+        "4. **Mục tiêu Giai đoạn 2 (Linear Models):** Xây dựng Ridge / ElasticNet trên `log1p(revenue)` kết hợp calendar features và store metadata để vượt mốc baseline 0.2391 (mục tiêu KPI <= 0.2270, cải thiện >= 5%).",
         "",
     ])
 
@@ -191,14 +191,13 @@ def main():
     clean_count = len(clean_train)
     logger.info(f"Clean train dataset ready: {clean_count} records")
 
-    # 3. Create temporal splits (Train: 18,982, Val: 3,686, Test: 3,832)
-    splits = create_temporal_splits(clean_train, out_dirs=[PROCESSED_DATA_DIR, SPLITS_DIR])
+    # 3. Create temporal splits (Train: 22,668, Val: 3,832)
+    splits = create_temporal_splits(clean_train, out_dirs=[SPLITS_DIR])
     train_df = splits["train"]
     val_df = splits["val"]
-    test_df = splits["test"]
 
     # 4. Train Baseline model on Primary Train
-    logger.info("Fitting WeekdayMedianBaseline on Primary Train (date < 2025-07-01)...")
+    logger.info("Fitting WeekdayMedianBaseline on Primary Train (date < 2025-10-01)...")
     baseline_model = WeekdayMedianBaseline()
     baseline_model.fit(train_df)
 
@@ -207,10 +206,11 @@ def main():
     baseline_model.save(model_artifact_path)
     logger.info(f"Saved baseline model artifact to {model_artifact_path}")
 
-    # 5. Generate predictions on Primary Validation (Q3/2025)
+    # 5. Generate predictions on Primary Validation (Q4/2025)
     val_preds, val_fallbacks = baseline_model.predict(val_df, return_fallback_info=True)
     val_metrics = compute_metrics(val_df[TARGET_COL].values, val_preds)
-    logger.info(f"Primary Validation (Q3/2025) Results: RMSLE={val_metrics['rmsle']}, MAE={val_metrics['mae']}")
+    logger.info(f"Primary Validation (Q4/2025) Results: RMSLE={val_metrics['rmsle']:.4f}, MAE={val_metrics['mae']:.2f}")
+
 
     # Save predictions dataframe
     val_eval_df = val_df[[DATE_COL, STORE_COL, TARGET_COL, PROMO_COL]].copy()

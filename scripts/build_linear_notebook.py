@@ -17,7 +17,7 @@ cells.append(nbf.v4.new_markdown_cell("""# Giai đoạn 2: Mô hình tuyến tí
 > **Tài liệu tham chiếu:** `Regression_Plan.md` (Giai đoạn 2 — Section 8 & Section 12)  
 > **Target:** `revenue` (Triệu VND)  
 > **Metric chính:** RMSLE (Root Mean Squared Logarithmic Error)  
-> **Mục tiêu KPI:** RMSLE $\\le$ **0.2946** (cải thiện $\\ge$ 5% so với baseline 0.3101)
+> **Mục tiêu KPI:** RMSLE $\\le$ **0.2270** (cải thiện $\\ge$ 5% so với baseline 0.2391)
 
 Notebook này thực hiện toàn bộ quy trình của Giai đoạn 2:
 1. **Làm sạch & Join dữ liệu đa nguồn:**
@@ -33,9 +33,9 @@ Notebook này thực hiện toàn bộ quy trình của Giai đoạn 2:
 3. **Huấn luyện mô hình hồi quy tuyến tính trên `log1p(revenue)`:**
    - Thực nghiệm qua các tầng feature: E0 (Baseline), E1 (Store+Cal), E2 (Promo), E3 (Weather+Holiday).
    - So sánh các họ mô hình tuyến tính: Ridge, OLS, HuberRegressor, ElasticNet, Lasso.
-4. **Walk-Forward Validation:** Đánh giá tính ổn định qua các Fold A (Q1/2025), Fold B (Q2/2025), Holdout chính (Q3/2025).
+4. **Walk-Forward Validation:** Đánh giá tính ổn định qua các Fold A (Q1/2025), Fold B (Q2/2025), Fold C (Q3/2025), Holdout chính (Q4/2025).
 5. **Khả năng giải thích (Interpretability):** Phân tích hệ số $\\beta$ và mức tăng trưởng doanh thu $\\Delta\\% = (e^\\beta - 1) \\times 100\\%$.
-6. **Phân tích lỗi chi tiết theo nhóm (Subgroup Error Analysis).**
+6. **Phân tích lỗi chi tiết theo nhóm (Subgroup Error Analysis trên Q4/2025).**
 """))
 
 # Cell 2: Imports & Environment setup
@@ -54,7 +54,7 @@ import seaborn as sns
 
 from src.config import (
     DATE_COL, STORE_COL, TARGET_COL, PROMO_COL,
-    PRIMARY_TRAIN_END, PRIMARY_VAL_END, PRIMARY_TEST_END,
+    PRIMARY_TRAIN_END, PRIMARY_VAL_END,
     WALK_FORWARD_FOLDS, MODELS_DIR, REPORTS_DIR, PROCESSED_DATA_DIR
 )
 from src.data.load import (
@@ -126,18 +126,16 @@ print(f"Tổng số cột sau khi tạo feature: {df.shape[1]}")
 # Phân chia tập theo thời gian chuẩn (Section 2.3)
 train_df = df[df[DATE_COL] < PRIMARY_TRAIN_END].copy()
 val_df = df[(df[DATE_COL] >= PRIMARY_TRAIN_END) & (df[DATE_COL] < PRIMARY_VAL_END)].copy()
-test_df = df[(df[DATE_COL] >= PRIMARY_VAL_END) & (df[DATE_COL] < PRIMARY_TEST_END)].copy()
 
 print(f"Train split: {len(train_df):,} dòng ({train_df.date.min().date()} đến {train_df.date.max().date()})")
-print(f"Val split:   {len(val_df):,} dòng ({val_df.date.min().date()} đến {val_df.date.max().date()})")
-print(f"Test split:  {len(test_df):,} dòng (Holdout khóa)")
+print(f"Val split:   {len(val_df):,} dòng ({val_df.date.min().date()} đến {val_df.date.max().date()}) [Holdout Q4/2025]")
 """))
 
 # Cell 7: Markdown Section 3
 cells.append(nbf.v4.new_markdown_cell("""## 3. Tiến trình thực nghiệm (Experiment Progression)
 
 Ta thực hiện lần lượt các thí nghiệm theo Section 8 của `Regression_Plan.md`:
-- **E0 (Baseline):** Median `(store_id, weekday)` (RMSLE = 0.3101).
+- **E0 (Baseline):** Median `(store_id, weekday)` (RMSLE = 0.2391 trên Q4/2025).
 - **E1 (Store + Calendar):** Ridge trên `log1p(revenue)` với `store_dow`, loại cửa hàng, thành phố, diện tích, chỗ ngồi, chu kỳ sin/cos.
 - **E2 (E1 + Promotion):** Bổ sung `is_promo` và `promo_x_weekend`.
 - **E3 (E2 + Weather & Holidays):** Bổ sung nhiệt độ, lượng mưa, cờ lễ.
@@ -204,10 +202,10 @@ cells.append(nbf.v4.new_code_cell("""fig, axes = plt.subplots(1, 2, figsize=(15,
 # Plot RMSLE
 sns.barplot(data=exp_df, x="Experiment", y="RMSLE", hue="Experiment", legend=False, palette="Blues_r", ax=axes[0])
 axes[0].axhline(res_e0["rmsle"], color="red", linestyle="--", label=f"Baseline ({res_e0['rmsle']:.4f})")
-axes[0].axhline(0.2946, color="green", linestyle=":", label="KPI Target (<= 0.2946)")
+axes[0].axhline(0.2270, color="green", linestyle=":", label="KPI Target (<= 0.2270)")
 axes[0].set_title("So sánh RMSLE qua các thí nghiệm (Càng thấp càng tốt)", fontsize=13, fontweight="bold")
 axes[0].set_xticklabels(axes[0].get_xticklabels(), rotation=45, ha="right")
-axes[0].set_ylim([0.22, 0.33])
+axes[0].set_ylim([0.16, 0.28])
 axes[0].legend()
 
 # Plot MAE
@@ -227,13 +225,14 @@ cells.append(nbf.v4.new_markdown_cell("""## 5. Walk-Forward Backtesting qua các
 Kiểm tra xem cải tiến có nhất quán trên nhiều quý lịch sử khác nhau hay không (Section 7.2):
 - **Fold A (Q1/2025):** Train < 2025-01-01 -> Val Q1/2025.
 - **Fold B (Q2/2025):** Train < 2025-04-01 -> Val Q2/2025.
-- **Holdout chính (Q3/2025):** Train < 2025-07-01 -> Val Q3/2025.
+- **Fold C (Q3/2025):** Train < 2025-07-01 -> Val Q3/2025.
+- **Holdout chính (Q4/2025):** Train < 2025-10-01 -> Val Q4/2025.
 """))
 
 # Cell 12: Code Section 5
 cells.append(nbf.v4.new_code_cell("""wf_records = []
 
-for fold_key in ["fold_a", "fold_b", "primary_val"]:
+for fold_key in ["fold_a", "fold_b", "fold_c", "primary_val"]:
     fold_cfg = WALK_FORWARD_FOLDS[fold_key]
     tr = df[df[DATE_COL] < fold_cfg["train_end"]]
     va = df[(df[DATE_COL] >= fold_cfg["val_start"]) & (df[DATE_COL] < fold_cfg["val_end"])]
@@ -302,7 +301,7 @@ for _, r in neg_top.head(5).iterrows():
 """))
 
 # Cell 15: Markdown Section 7
-cells.append(nbf.v4.new_markdown_cell("""## 7. Phân tích chi tiết lỗi theo nhóm (Subgroup Analysis trên Q3/2025)"""))
+cells.append(nbf.v4.new_markdown_cell("""## 7. Phân tích chi tiết lỗi theo nhóm (Subgroup Analysis trên Q4/2025)"""))
 
 # Cell 16: Code Section 7
 cells.append(nbf.v4.new_code_cell("""val_analysis = val_df.copy()
@@ -362,7 +361,7 @@ lims = [0, 55]
 axes[1].plot(lims, lims, color="red", linestyle="--", label="Đường chuẩn y = x")
 axes[1].set_xlim(lims)
 axes[1].set_ylim(lims)
-axes[1].set_title("Doanh thu thực tế vs Doanh thu dự báo Ridge (Q3/2025)")
+axes[1].set_title("Doanh thu thực tế vs Doanh thu dự báo Ridge (Q4/2025)")
 axes[1].set_xlabel("Doanh thu thực tế (Tr. VND)")
 axes[1].set_ylabel("Doanh thu dự báo Ridge (Tr. VND)")
 axes[1].legend()
@@ -376,19 +375,19 @@ cells.append(nbf.v4.new_markdown_cell("""## 9. Kết luận Giai đoạn 2 & Chu
 
 ### Thành tựu cốt lõi:
 1. **Đạt và vượt mục tiêu KPI:**
-   - Baseline Q3/2025: **RMSLE = 0.3101** | MAE = **4.31 triệu VND**.
-   - Mô hình tuyến tính Ridge: **RMSLE = 0.2631** | MAE = **3.75 triệu VND**.
-   - Giảm sai số **15.16%** (vượt xa chỉ tiêu $\\ge 5\\%$ / mốc 0.2946).
-2. **Khắc phục điểm yếu lớn nhất của Baseline:**
-   - Khi có khuyến mãi, baseline sai số **0.4424** -> Ridge hạ xuống **0.3423** (giảm hơn 22%).
-   - Cửa hàng trường học nghỉ hè sai số **0.5329** -> Ridge hạ xuống **0.3957** (giảm hơn 25%).
-   - Cửa hàng mới ít quan sát sai số **0.4714** -> Ridge hạ xuống **0.3439** (giảm hơn 27%).
+   - Baseline Q4/2025: **RMSLE = 0.2391** | MAE = **3.57 triệu VND**.
+   - Mô hình tuyến tính Ridge (E3): **RMSLE = 0.1978** | MAE = **2.96 triệu VND** (cải thiện **+17.27%**).
+   - Mô hình HuberRegressor (E4): **RMSLE = 0.1863** | MAE = **2.76 triệu VND** (cải thiện **+22.08%**).
+   - Vượt xa chỉ tiêu KPI $\\le$ **0.2270** (cải thiện $\\ge 5\\%$).
+2. **Khắc phục các điểm mù lớn nhất của Baseline:**
+   - Ngày khuyến mãi: Baseline sai số 0.2981 -> Ridge hạ xuống 0.2355 (cải thiện +20.98%).
+   - Cửa hàng mới mở: Baseline sai số 0.3666 -> Ridge hạ xuống 0.2476 (cải thiện +32.47%).
 3. **Độ ổn định cao trên Walk-forward:**
-   - Cả 3 quý (Q1, Q2, Q3/2025) đều ghi nhận mức cải thiện từ 5% đến 15%.
+   - Cả 4 quý (Fold A Q1, Fold B Q2, Fold C Q3, Holdout Q4/2025) đều ghi nhận mức cải thiện từ +5.37% đến +17.27%.
 
 ### Cầu nối sang Giai đoạn 3 (Tree-based Models — Random Forest, LightGBM, CatBoost):
 - Mô hình tuyến tính giả định tác động cộng tính (additive effects). Tuy nhiên, các mối quan hệ như thời tiết (mưa to kèm lạnh vs mưa rào mát) hay mùa sinh viên nghỉ hè (`university` $\\times$ `month in [7, 8]`) có tính phi tuyến và tương tác bậc cao.
-- Tree-based models ở Giai đoạn 3 sẽ giải quyết các tương tác phi tuyến này để tiếp tục đẩy RMSLE về vùng **< 0.2400**.
+- Tree-based models ở Giai đoạn 3 sẽ giải quyết các tương tác phi tuyến này để tiếp tục đẩy RMSLE về vùng thấp hơn nữa.
 """))
 
 nb["cells"] = cells

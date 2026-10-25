@@ -11,7 +11,6 @@ from src.config import (
     TARGET_COL,
     PRIMARY_TRAIN_END,
     PRIMARY_VAL_END,
-    PRIMARY_TEST_END,
     TRAIN_RAW_FILE,
     STORES_RAW_FILE,
     WEATHER_RAW_FILE,
@@ -93,39 +92,35 @@ def create_temporal_splits(
     df_clean: pd.DataFrame,
     out_dirs: Optional[List[Path]] = None
 ) -> Dict[str, pd.DataFrame]:
-    """Create the 3-way time-based split defined in Regression_Plan Section 2.3.
+    """Create the 2-way time-based split matching Starter Notebook (Regression_Plan Section 2.3).
 
     Splits:
-    - Train: date < 2025-07-01 (18,982 rows, 71.63%)
-    - Val: 2025-07-01 <= date < 2025-10-01 (3,686 rows, 13.91%)
-    - Test: 2025-10-01 <= date < 2026-01-01 (3,832 rows, 14.46%)
+    - Train: date < 2025-10-01 (22,668 rows, 85.54%)
+    - Val: date >= 2025-10-01 (3,832 rows, 14.46%, Q4/2025)
 
-    Writes train.csv, val.csv, test.csv to target directories without modifying raw data.
+    Writes train.csv and val.csv to target directories without modifying raw data.
     """
     if out_dirs is None:
-        out_dirs = [PROCESSED_DATA_DIR, SPLITS_DIR]
+        out_dirs = [SPLITS_DIR]
 
     train_part = df_clean[df_clean[DATE_COL] < PRIMARY_TRAIN_END].sort_values([DATE_COL, STORE_COL])
-    val_part = df_clean[
-        (df_clean[DATE_COL] >= PRIMARY_TRAIN_END) & (df_clean[DATE_COL] < PRIMARY_VAL_END)
-    ].sort_values([DATE_COL, STORE_COL])
-    test_part = df_clean[
-        (df_clean[DATE_COL] >= PRIMARY_VAL_END) & (df_clean[DATE_COL] < PRIMARY_TEST_END)
-    ].sort_values([DATE_COL, STORE_COL])
+    val_part = df_clean[df_clean[DATE_COL] >= PRIMARY_TRAIN_END].sort_values([DATE_COL, STORE_COL])
 
     splits = {
         "train": train_part,
         "val": val_part,
-        "test": test_part,
     }
 
     # Verify counts
-    assert len(train_part) == 18982, f"Expected 18,982 train rows, got {len(train_part)}"
-    assert len(val_part) == 3686, f"Expected 3,686 val rows, got {len(val_part)}"
-    assert len(test_part) == 3832, f"Expected 3,832 test rows, got {len(test_part)}"
+    assert len(train_part) == 22668, f"Expected 22,668 train rows, got {len(train_part)}"
+    assert len(val_part) == 3832, f"Expected 3,832 val rows, got {len(val_part)}"
 
     for target_dir in out_dirs:
         target_dir.mkdir(parents=True, exist_ok=True)
+        # Clean up legacy test.csv if present
+        legacy_test = target_dir / "test.csv"
+        if legacy_test.exists():
+            legacy_test.unlink()
         for name, part_df in splits.items():
             out_file = target_dir / f"{name}.csv"
             part_df.to_csv(out_file, index=False)
@@ -135,12 +130,18 @@ def create_temporal_splits(
 
 
 def load_splits(splits_dir: Optional[Path] = None) -> Dict[str, pd.DataFrame]:
-    """Load train, val, and test splits from CSV files."""
+    """Load train and val splits from CSV files (and test if available)."""
     s_dir = splits_dir or SPLITS_DIR
     splits = {}
-    for name in ["train", "val", "test"]:
+    for name in ["train", "val"]:
         file_path = s_dir / f"{name}.csv"
         if not file_path.exists():
             raise FileNotFoundError(f"Split file not found: {file_path}. Please run create_temporal_splits first.")
         splits[name] = pd.read_csv(file_path, parse_dates=[DATE_COL])
+
+    # Optional test file (if provided from Kaggle)
+    test_path = s_dir / "test.csv"
+    if test_path.exists():
+        splits["test"] = pd.read_csv(test_path, parse_dates=[DATE_COL])
+
     return splits

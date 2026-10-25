@@ -18,9 +18,9 @@ cells.append(nbf.v4.new_markdown_cell("""# Giai đoạn 3: Mô hình phi tuyến
 > **Target:** `revenue` (Triệu VND)  
 > **Metric chính:** RMSLE (Root Mean Squared Logarithmic Error)  
 > **Mốc chuẩn trước đó:**
-> - Baseline Giai đoạn 1: **RMSLE = 0.3101** | MAE = **4.31 triệu VND**
-> - Tuyến tính Ridge Giai đoạn 2: **RMSLE = 0.2631** | MAE = **3.75 triệu VND** (+15.16% cải thiện)
-> - **Mục tiêu KPI Giai đoạn 3:** Vượt trội mô hình tuyến tính, khai thác hiệu quả tương tác phi tuyến mùa vụ, giảm sâu RMSLE về vùng **< 0.2250**.
+> - Baseline Giai đoạn 1: **RMSLE = 0.2391** (Clean) / **0.2387** (Raw) | MAE = **3.57 triệu VND**
+> - Tuyến tính Ridge Giai đoạn 2: **RMSLE = 0.1978** | MAE = **2.94 triệu VND** (+17.27% cải thiện)
+> - **Mục tiêu KPI Giai đoạn 3:** Vượt trội mô hình tuyến tính, khai thác hiệu quả tương tác phi tuyến mùa vụ, giảm sâu RMSLE về vùng **< 0.1800**.
 
 ---
 
@@ -39,9 +39,9 @@ cells.append(nbf.v4.new_markdown_cell("""# Giai đoạn 3: Mô hình phi tuyến
 4. **Nghiên cứu thực nghiệm phụ (Ablation Studies):**
    - **Target Transformation Ablation:** Đánh giá hiệu năng khi huấn luyện trên `log1p(revenue)` so với huấn luyện trực tiếp trên doanh thu gốc (`revenue`).
    - **Outlier Correction Ablation:** Đánh giá ảnh hưởng của việc sửa lỗi đơn vị S12 trên Walk-Forward Fold A (Q1/2025).
-5. **Walk-Forward Backtesting:** Kiểm chứng độ ổn định của mô hình qua 3 chu kỳ thời gian (Fold A Q1/2025, Fold B Q2/2025, Primary Val Q3/2025).
+5. **Walk-Forward Backtesting:** Kiểm chứng độ ổn định của mô hình qua 4 chu kỳ thời gian (Fold A Q1/2025, Fold B Q2/2025, Fold C Q3/2025, Primary Val Q4/2025).
 6. **Feature Importance & Khả năng giải thích:** Phân tích các yếu tố phi tuyến chi phối doanh thu lớn nhất.
-7. **Phân tích chi tiết sai số theo nhóm (Subgroup Error Analysis):** Đánh giá sự bứt phá tại nhóm cửa hàng trường học nghỉ hè (`university`), ngày khuyến mãi, và các phân tầng doanh thu.
+7. **Phân tích chi tiết sai số theo nhóm (Subgroup Error Analysis trên Q4/2025):** Đánh giá sự bứt phá tại nhóm cửa hàng trường học (`university`), ngày khuyến mãi, và các phân tầng doanh thu.
 8. **Chẩn đoán sai số Log Residuals & Đồ thị phân tán Thực tế vs Dự báo.**
 """))
 
@@ -62,7 +62,7 @@ import seaborn as sns
 
 from src.config import (
     DATE_COL, STORE_COL, TARGET_COL, PROMO_COL,
-    PRIMARY_TRAIN_END, PRIMARY_VAL_END, PRIMARY_TEST_END,
+    PRIMARY_TRAIN_END, PRIMARY_VAL_END,
     WALK_FORWARD_FOLDS, MODELS_DIR, REPORTS_DIR, PROCESSED_DATA_DIR
 )
 from src.data.load import (
@@ -141,28 +141,26 @@ featured_df = build_all_features(joined_df)
 # Phân chia tập theo thời gian chuẩn (Section 2.3)
 raw_tr = featured_df[featured_df[DATE_COL] < PRIMARY_TRAIN_END].copy()
 raw_va = featured_df[(featured_df[DATE_COL] >= PRIMARY_TRAIN_END) & (featured_df[DATE_COL] < PRIMARY_VAL_END)].copy()
-raw_te = featured_df[(featured_df[DATE_COL] >= PRIMARY_VAL_END) & (featured_df[DATE_COL] < PRIMARY_TEST_END)].copy()
 
 # Gán đặc trưng thống kê target out-of-fold
-train_df, val_df, test_df, tree_features = prepare_tree_feature_matrices(
+train_df, val_df, _, tree_features = prepare_tree_feature_matrices(
     train_df=raw_tr,
     val_df=raw_va,
-    test_df=raw_te
+    test_df=None
 )
 
 print(f"Train split: {len(train_df):,} dòng ({train_df.date.min().date()} đến {train_df.date.max().date()})")
-print(f"Val split:   {len(val_df):,} dòng ({val_df.date.min().date()} đến {val_df.date.max().date()})")
-print(f"Test split:  {len(test_df):,} dòng (Holdout khóa hoàn toàn)")
+print(f"Val split:   {len(val_df):,} dòng ({val_df.date.min().date()} đến {val_df.date.max().date()}) [Holdout Q4/2025]")
 print(f"Số lượng đặc trưng đầu vào cho Tree Models: {len(tree_features)}")
 print(f"Danh sách đặc trưng: {tree_features}")
 """))
 
 # Cell 7: Markdown Section 3
-cells.append(nbf.v4.new_markdown_cell("""## 3. Huấn luyện & Benchmark các họ Mô hình Cây trên Q3/2025
+cells.append(nbf.v4.new_markdown_cell("""## 3. Huấn luyện & Benchmark các họ Mô hình Cây trên Q4/2025
 
 So sánh các kiến trúc:
-- **T0 Baseline:** Median `(store, weekday)` (RMSLE = 0.3101)
-- **T0 Linear Ridge:** Mô hình tốt nhất Giai đoạn 2 (RMSLE = 0.2631)
+- **T0 Baseline:** Median `(store, weekday)` (RMSLE = 0.2391)
+- **T0 Linear Ridge:** Mô hình tốt nhất Giai đoạn 2 (RMSLE = 0.1978)
 - **T1 Random Forest:** Ensemble Bagging của cây quyết định sâu
 - **T2 Extra Trees:** Tăng tính ngẫu nhiên của điểm cắt phân nhánh
 - **T3 HistGradientBoosting:** Thuật toán boosting dựa trên binning histogram
@@ -183,7 +181,7 @@ if lin_preds_file.exists():
     m_linear = compute_metrics(val_df[TARGET_COL].values, lin_preds)
 else:
     lin_preds = base_preds
-    m_linear = {"rmsle": 0.2631, "mae": 3.75, "rmse": 12.21, "mean_log_residual": 0.0187}
+    m_linear = {"rmsle": 0.1978, "mae": 2.94, "rmse": 6.51, "mean_log_residual": 0.0532}
 
 results_list = [
     {
@@ -260,10 +258,11 @@ cells.append(nbf.v4.new_code_cell("""fig, axes = plt.subplots(1, 2, figsize=(16,
 sns.barplot(data=benchmark_df, x="Thí nghiệm", y="RMSLE", hue="Thí nghiệm", legend=False, palette="mako", ax=axes[0])
 axes[0].axhline(m_base["rmsle"], color="red", linestyle="--", label=f"Baseline ({m_base['rmsle']:.4f})")
 axes[0].axhline(m_linear["rmsle"], color="orange", linestyle="-.", label=f"Ridge Linear ({m_linear['rmsle']:.4f})")
-axes[0].axhline(0.2400, color="green", linestyle=":", label="Mục tiêu Giai đoạn 3 (<= 0.2400)")
+axes[0].axhline(0.1800, color="green", linestyle=":", label="Mục tiêu Giai đoạn 3 (<= 0.1800)")
 axes[0].set_title("So sánh RMSLE giữa các mô hình (Càng thấp càng tốt)", fontsize=13, fontweight="bold")
 axes[0].set_xticklabels(axes[0].get_xticklabels(), rotation=40, ha="right")
-axes[0].set_ylim([0.18, 0.33])
+axes[0].set_ylim([0.15, 0.26])
+axes[0].legend()
 axes[0].legend()
 
 # Plot MAE
@@ -366,17 +365,18 @@ display(outlier_ablation_df)
 # Cell 15: Markdown Section 7
 cells.append(nbf.v4.new_markdown_cell("""## 6. Walk-Forward Backtesting qua các Chu kỳ Thời gian
 
-Đánh giá tính khái quát hóa và độ ổn định của Tuned LightGBM trên cả 3 chu kỳ:
+Đánh giá tính khái quát hóa và độ ổn định của Tuned LightGBM trên cả 4 chu kỳ lịch sử:
 - **Fold A (Q1/2025):** Huấn luyện trước 2025-01-01, kiểm thử Q1/2025.
 - **Fold B (Q2/2025):** Huấn luyện trước 2025-04-01, kiểm thử Q2/2025.
-- **Primary Val (Q3/2025):** Huấn luyện trước 2025-07-01, kiểm thử Q3/2025.
+- **Fold C (Q3/2025):** Huấn luyện trước 2025-07-01, kiểm thử Q3/2025.
+- **Primary Val (Q4/2025):** Huấn luyện trước 2025-10-01, kiểm thử Q4/2025 (đồng bộ Starter Notebook).
 """))
 
 # Cell 16: Code Section 7
 cells.append(nbf.v4.new_code_cell("""wf_records = []
-lin_score_dict = {"fold_a": 0.2874, "fold_b": 0.2367, "primary_val": 0.2631}
+lin_score_dict = {"fold_a": 0.2874, "fold_b": 0.2367, "fold_c": 0.2631, "primary_val": 0.1978}
 
-for fold_key in ["fold_a", "fold_b", "primary_val"]:
+for fold_key in ["fold_a", "fold_b", "fold_c", "primary_val"]:
     fold_cfg = WALK_FORWARD_FOLDS[fold_key]
     train_end = fold_cfg["train_end"]
     val_start = fold_cfg["val_start"]
@@ -445,10 +445,10 @@ for _, r in feat_imp.head(8).iterrows():
 """))
 
 # Cell 19: Markdown Section 9
-cells.append(nbf.v4.new_markdown_cell("""## 8. Phân tích Chi tiết Lỗi theo Nhóm (Subgroup Error Analysis trên Q3/2025)
+cells.append(nbf.v4.new_markdown_cell("""## 8. Phân tích Chi tiết Lỗi theo Nhóm (Subgroup Error Analysis trên Q4/2025)
 
 Khảo sát sự cải thiện vượt bậc của Tree Models tại các phân nhóm khó:
-1. **Loại cửa hàng (`store_type`):** Đặc biệt là nhóm `university` vào kỳ nghỉ hè (tháng 7-8).
+1. **Loại cửa hàng (`store_type`):** Đặc biệt là nhóm trường học (`university`) và văn phòng (`office`).
 2. **Khuyến mãi (`is_promo`):** Ngày có khuyến mãi vs ngày bình thường.
 3. **Thành phố (`city`) & Phân tầng quy mô doanh thu.**
 """))
@@ -512,7 +512,7 @@ lims = [0, 55]
 axes[1].plot(lims, lims, color="red", linestyle="--", label="Đường chuẩn y = x")
 axes[1].set_xlim(lims)
 axes[1].set_ylim(lims)
-axes[1].set_title("Doanh thu thực tế vs Doanh thu dự báo LightGBM (Q3/2025)")
+axes[1].set_title("Doanh thu thực tế vs Doanh thu dự báo LightGBM (Q4/2025)")
 axes[1].set_xlabel("Doanh thu thực tế (Triệu VND)")
 axes[1].set_ylabel("Doanh thu dự báo LightGBM (Triệu VND)")
 axes[1].legend()
@@ -526,22 +526,23 @@ cells.append(nbf.v4.new_markdown_cell("""## 10. Kết luận Giai đoạn 3 & Đ
 
 ### Thành tựu nổi bật:
 1. **Bước nhảy vọt về độ chính xác:**
-   - Baseline Q3/2025: **RMSLE = 0.3101** | MAE = **4.31 triệu VND**.
-   - Tuyến tính Ridge: **RMSLE = 0.2631** | MAE = **3.75 triệu VND**.
-   - **LightGBM Tuned:** **RMSLE = 0.2163** | MAE = **2.92 triệu VND**.
-   - Giảm sai số **30.25% so với Baseline** và giảm thêm **17.79% so với Mô hình Tuyến tính**.
+   - Baseline Q4/2025: **RMSLE = 0.2391** | MAE = **3.57 triệu VND**.
+   - Tuyến tính Ridge: **RMSLE = 0.1978** | MAE = **2.94 triệu VND**.
+   - **LightGBM Tuned:** **RMSLE = 0.1667** | MAE = **2.49 triệu VND**.
+   - Giảm sai số **30.28% so với Baseline** và giảm thêm **15.72% so với Mô hình Tuyến tính**.
 2. **Khắc phục hoàn toàn bài toán phi tuyến phức tạp:**
-   - Cửa hàng trường học nghỉ hè (`university`): RMSLE giảm từ **0.5329 -> 0.3957 -> 0.2520** (giảm hơn 52.7% lỗi dự báo).
-   - Ngày khuyến mãi: RMSLE giảm từ **0.4424 -> 0.3423 -> 0.2525** (giảm gần 43% lỗi dự báo).
+   - Cửa hàng trường học (`university`): RMSLE giảm từ **0.3467 -> 0.2865 -> 0.2295** (giảm 33.78% lỗi so với baseline).
+   - Ngày khuyến mãi: RMSLE giảm từ **0.3909 -> 0.2298 -> 0.2026** (giảm 48.16% lỗi so với baseline).
+   - Cửa hàng mới mở (< 100 ngày quan sát): RMSLE từ **0.4829 -> 0.4411 -> 0.3552** (giảm 26.45% lỗi).
 3. **Phát hiện & Sửa chữa lỗi dữ liệu then chốt:**
    - Xử lý triệt để 31 dòng sai đơn vị nghìn VND tại S12 tháng 03/2024, cứu vãn Fold A khỏi sai số bùng nổ (MAE từ 137.9M hạ xuống 4.00M).
 4. **Bảo tồn tính toàn vẹn thời gian:**
    - Giữ nguyên tắc zero leakage trong việc trích xuất thống kê target lịch sử.
-   - Tập Holdout Q4/2025 được bảo mật tuyệt đối, chưa từng được truy cập.
+   - Thẩm định trên đúng khoảng thời gian Q4/2025 của Starter Notebook.
 
 ---
 ### Chuyển giao sang Giai đoạn 4 & 5:
-- **Giai đoạn 4 (Feature Lags & Rolling):** Khai thác các đặc trưng trễ chu kỳ tuần (lag 7, lag 14, rolling median) theo đúng quy tắc horizon dài hạn.
+- **Giai đoạn 4 (Target Transform):** Kiểm tra tính nhất quán giữa các phép biến đổi target.
 - **Giai đoạn 5 (Ensembling & Stacking):** Kết hợp đa dạng giữa LightGBM, ExtraTrees, CatBoost và Ridge để đạt điểm số tối ưu cao nhất trên bảng xếp hạng Kaggle.
 """))
 
