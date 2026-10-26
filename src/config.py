@@ -7,13 +7,14 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
 RAW_DATA_DIR = DATA_DIR / "raw"
 PROCESSED_DATA_DIR = DATA_DIR / "processed"
+CLEAN_DATA_DIR = DATA_DIR / "clean"
 SPLITS_DIR = PROJECT_ROOT / "regression_splits"
 MODELS_DIR = PROJECT_ROOT / "models"
 REPORTS_DIR = PROJECT_ROOT / "reports"
 NOTEBOOKS_DIR = PROJECT_ROOT / "notebooks"
 
 # Ensure runtime directories exist
-for p in [PROCESSED_DATA_DIR, SPLITS_DIR, MODELS_DIR, REPORTS_DIR, NOTEBOOKS_DIR]:
+for p in [PROCESSED_DATA_DIR, CLEAN_DATA_DIR, SPLITS_DIR, MODELS_DIR, REPORTS_DIR, NOTEBOOKS_DIR]:
     p.mkdir(parents=True, exist_ok=True)
 
 # Raw Data Files
@@ -22,6 +23,12 @@ STORES_RAW_FILE = RAW_DATA_DIR / "stores.csv"
 WEATHER_RAW_FILE = RAW_DATA_DIR / "weather.csv"
 HOLIDAYS_RAW_FILE = RAW_DATA_DIR / "holidays.csv"
 SAMPLE_SUBMISSION_FILE = RAW_DATA_DIR / "sample_submission.csv"
+
+# Clean Data Files (Giai đoạn 0)
+TRAIN_CLEAN_FILE = CLEAN_DATA_DIR / "train_clean.parquet"
+STORES_CLEAN_FILE = CLEAN_DATA_DIR / "stores_clean.parquet"
+WEATHER_CLEAN_FILE = CLEAN_DATA_DIR / "weather_clean.parquet"
+HOLIDAYS_DAILY_FILE = CLEAN_DATA_DIR / "holidays_daily.parquet"
 
 # Column Definitions
 DATE_COL = "date"

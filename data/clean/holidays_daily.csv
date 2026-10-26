@@ -1,0 +1,54 @@
+date,holiday_count,is_national_holiday,is_event,holiday_names,is_holiday,is_tet_day1,is_tet_period,is_tet_eve,holiday_covered
+2024-01-01,1,1,0,New Year's Day,1,0,0,0,1
+2024-02-03,1,0,1,Ong Cong Ong Tao (23 Tet),1,0,0,1,1
+2024-02-08,1,1,0,Tet holiday,1,0,1,0,1
+2024-02-09,1,1,0,Tet holiday,1,0,1,0,1
+2024-02-10,1,1,0,Lunar New Year (Tet),1,1,1,0,1
+2024-02-11,1,1,0,Tet holiday,1,0,1,0,1
+2024-02-12,1,1,0,Tet holiday,1,0,1,0,1
+2024-02-13,1,1,0,Tet holiday,1,0,1,0,1
+2024-02-14,2,1,1,Tet holiday; Valentine's Day,1,0,1,0,1
+2024-03-08,1,0,1,International Women's Day,1,0,0,0,1
+2024-04-18,1,1,0,Hung Kings' Day,1,0,0,0,1
+2024-04-30,1,1,0,Reunification Day,1,0,0,0,1
+2024-05-01,1,1,0,Labour Day,1,0,0,0,1
+2024-09-02,1,1,0,National Day,1,0,0,0,1
+2024-09-03,1,1,0,National Day (bridge),1,0,0,0,1
+2024-10-20,1,0,1,Vietnamese Women's Day,1,0,0,0,1
+2024-11-20,1,0,1,Teachers' Day,1,0,0,0,1
+2024-12-24,1,0,1,Christmas Eve,1,0,0,0,1
+2024-12-25,1,0,1,Christmas Day,1,0,0,0,1
+2025-01-01,1,1,0,New Year's Day,1,0,0,0,1
+2025-01-22,1,0,1,Ong Cong Ong Tao (23 Tet),1,0,0,1,1
+2025-01-25,1,1,0,Tet holiday,1,0,1,0,1
+2025-01-26,1,1,0,Tet holiday,1,0,1,0,1
+2025-01-27,1,1,0,Tet holiday,1,0,1,0,1
+2025-01-28,1,1,0,Tet holiday,1,0,1,0,1
+2025-01-29,1,1,0,Lunar New Year (Tet),1,1,1,0,1
+2025-01-30,1,1,0,Tet holiday,1,0,1,0,1
+2025-01-31,1,1,0,Tet holiday,1,0,1,0,1
+2025-02-01,1,1,0,Tet holiday,1,0,1,0,1
+2025-02-02,1,1,0,Tet holiday,1,0,1,0,1
+2025-02-14,1,0,1,Valentine's Day,1,0,0,0,1
+2025-03-08,1,0,1,International Women's Day,1,0,0,0,1
+2025-04-07,1,1,0,Hung Kings' Day,1,0,0,0,1
+2025-04-30,1,1,0,Reunification Day,1,0,0,0,1
+2025-05-01,1,1,0,Labour Day,1,0,0,0,1
+2025-09-01,1,1,0,National Day (bridge),1,0,0,0,1
+2025-09-02,1,1,0,National Day,1,0,0,0,1
+2025-10-20,1,0,1,Vietnamese Women's Day,1,0,0,0,1
+2025-11-20,1,0,1,Teachers' Day,1,0,0,0,1
+2025-12-24,1,0,1,Christmas Eve,1,0,0,0,1
+2025-12-25,1,0,1,Christmas Day,1,0,0,0,1
+2026-01-01,1,1,0,New Year's Day,1,0,0,0,1
+2026-02-10,1,0,1,Ong Cong Ong Tao (23 Tet),1,0,0,1,1
+2026-02-14,2,1,1,Tet holiday; Valentine's Day,1,0,1,0,1
+2026-02-15,1,1,0,Tet holiday,1,0,1,0,1
+2026-02-16,1,1,0,Tet holiday,1,0,1,0,1
+2026-02-17,1,1,0,Lunar New Year (Tet),1,1,1,0,1
+2026-02-18,1,1,0,Tet holiday,1,0,1,0,1
+2026-02-19,1,1,0,Tet holiday,1,0,1,0,1
+2026-02-20,1,1,0,Tet holiday,1,0,1,0,1
+2026-02-21,1,1,0,Tet holiday,1,0,1,0,1
+2026-02-22,1,1,0,Tet holiday,1,0,1,0,1
+2026-03-08,1,0,1,International Women's Day,1,0,0,0,1

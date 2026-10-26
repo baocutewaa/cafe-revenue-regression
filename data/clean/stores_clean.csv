@@ -1,0 +1,46 @@
+store_id,city,district,store_type,area_m2,seats,has_parking,open_date,area_m2_missing
+S01,Ha Noi,Ba Dinh,university,149.0,62.0,1,2025-12-07,0
+S02,Ha Noi,Thanh Xuan,residential,95.0,28.0,1,2022-07-27,0
+S03,Ha Noi,Hai Ba Trung,office,120.0,38.0,0,2018-03-12,0
+S04,Ha Noi,Tay Ho,street,101.0,41.0,0,2019-04-17,0
+S05,Ha Noi,Hai Ba Trung,street,191.0,75.0,1,2020-12-24,0
+S06,Ha Noi,Dong Da,office,111.0,53.0,1,2019-11-16,0
+S07,Ha Noi,Thanh Xuan,office,111.0,36.0,1,2025-06-10,0
+S08,Ha Noi,Nam Tu Liem,street,138.0,54.0,0,2025-05-09,0
+S09,Ha Noi,Hai Ba Trung,mall,81.0,25.0,0,2025-02-10,0
+S10,Ha Noi,Nam Tu Liem,mall,95.0,35.0,1,2022-06-27,0
+S11,Ha Noi,Ha Dong,university,169.0,56.0,1,2025-08-21,0
+S12,Ha Noi,Dong Da,office,130.0,55.0,0,2018-12-31,0
+S13,Ha Noi,Hai Ba Trung,street,209.0,88.0,1,2022-10-06,0
+S14,Ha Noi,Tay Ho,residential,62.0,24.0,1,2021-03-24,0
+S15,Ha Noi,Hoan Kiem,street,167.0,75.0,0,2021-03-01,0
+S16,Ha Noi,Nam Tu Liem,street,159.0,61.0,0,2018-05-27,0
+S17,Ha Noi,Long Bien,street,146.0,66.0,0,2020-01-06,0
+S18,Ha Noi,Hoan Kiem,street,142.0,55.0,1,2018-12-07,0
+S19,Ha Noi,Ha Dong,street,148.5737704918033,57.0,1,2025-10-11,1
+S20,Ha Noi,Hoan Kiem,residential,82.0,30.0,0,2022-10-20,0
+S21,Ha Noi,Hai Ba Trung,mall,128.0,43.0,1,2022-11-14,0
+S22,Ha Noi,Nam Tu Liem,university,192.0,76.0,1,2022-04-09,0
+S23,Ha Noi,Hai Ba Trung,mall,89.0,30.0,1,2023-06-12,0
+S24,Ha Noi,Ba Dinh,office,143.36065573770492,55.0,0,2021-07-02,1
+S25,Ho Chi Minh,Tan Binh,street,217.0,89.0,0,2018-04-11,0
+S26,Ho Chi Minh,District 3,office,111.0,35.0,0,2020-12-02,0
+S27,Ho Chi Minh,District 10,office,142.0,52.0,1,2019-04-20,0
+S28,Ho Chi Minh,Thu Duc,residential,61.0,28.0,1,2020-09-13,0
+S29,Ho Chi Minh,District 1,mall,114.0,48.0,1,2023-05-27,0
+S30,Ho Chi Minh,Thu Duc,university,186.0,66.0,0,2019-03-29,0
+S31,Ho Chi Minh,Go Vap,university,229.0,78.0,1,2018-05-31,0
+S32,Ho Chi Minh,Binh Thanh,university,134.0,40.0,0,2022-08-17,0
+S33,Ho Chi Minh,Phu Nhuan,office,143.0,46.0,1,2023-02-19,0
+S34,Ho Chi Minh,District 1,street,146.0,47.0,1,2018-09-11,0
+S35,Ho Chi Minh,Tan Binh,residential,89.0,42.0,0,2022-01-06,0
+S36,Ho Chi Minh,Thu Duc,street,158.0,62.0,0,2022-07-31,0
+S37,Ho Chi Minh,District 10,office,96.0,42.0,1,2019-01-31,0
+S38,Ho Chi Minh,District 7,office,90.0,32.0,1,2018-12-07,0
+S39,Ho Chi Minh,District 10,office,107.0,30.0,0,2018-01-27,0
+S40,Ho Chi Minh,District 7,street,186.0,73.0,1,2020-10-02,0
+S41,Ho Chi Minh,District 1,mall,105.0,44.0,1,2025-03-07,0
+S42,Ho Chi Minh,District 1,street,119.0,53.0,1,2024-10-19,0
+S43,Ho Chi Minh,District 7,street,178.0,66.0,1,2024-11-16,0
+S44,Ho Chi Minh,District 1,mall,73.0,25.0,1,2025-05-05,0
+S45,Ho Chi Minh,Thu Duc,mall,100.0,35.0,1,2025-12-11,0

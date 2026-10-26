@@ -8,17 +8,16 @@ Dự án Machine Learning dự báo doanh thu hàng ngày theo từng cửa hàn
 
 ---
 
-## Tóm tắt Điều hành & Tiến trình Huấn luyện (Executive Summary)
+## Executive Summary
 
 Dự án đã chuẩn hóa 100% chiến lược phân chia dữ liệu đồng bộ tuyệt đối với Notebook cơ sở của Ban tổ chức ([`data/raw/starter_cafe.ipynb`](data/raw/starter_cafe.ipynb)):
 - **Tập Train:** Dữ liệu trước 01/10/2025 (`date < 2025-10-01`), bao gồm **22.668 dòng sạch** sau khi loại 132 bản ghi trùng lặp (21 tháng lịch sử: 01/01/2024 – 30/09/2025).
 - **Tập Primary Validation:** Quý 4/2025 (`01/10/2025 <= date <= 31/12/2025`), bao gồm **3.832 dòng sạch** làm mốc đánh giá chuẩn mực.
-- **Tập Test chính thức:** Quý 1/2026 (`01/01/2026 <= date <= 31/03/2026`), do giảng viên công bố trên Kaggle (dự án không tự cắt tệp test nội bộ từ `train.csv`).
-
-### Bảng thành tích lũy tiến qua 5 thế hệ mô hình trên Primary Validation (Q4/2025)
+- **Tập Test chính thức:*### Bảng thành tích lũy tiến qua các giai đoạn mô hình trên Primary Validation (Q4/2025)
 
 | Giai đoạn | Thế hệ mô hình | Cấu hình & Kỹ thuật cốt lõi | RMSLE | MAE (Tr. VND) | Cải thiện vs Baseline | Trạng thái kỹ thuật |
 |---|---|---|---|---|---|---|
+| **GĐ 0** | **Làm sạch có kiểm chứng** | Khử trùng lặp (132), sửa S12 (/1000), cờ 75 đột biến, chuẩn hóa thời tiết (°F->°C, lưới 1.642 dòng) & stores, ablation C0–C5 | — | — | — | **Nền tảng dữ liệu sạch chuẩn mực** |
 | **GĐ 1** | **Baseline Median** | Lookup trung vị `(store_id, weekday)` + 2 tầng fallback | **0.2391** *(0.2387 raw)* | 3.57 | 0.0% | Mốc chuẩn đối chiếu ban đầu |
 | **GĐ 2** | **Linear Model** | Ridge Regression (`log1p` target + E3 features: Lịch, Store, Promo, Weather, Holiday) | **0.1978** | 2.94 | **+17.27%** | Vượt baseline rõ rệt |
 | **GĐ 3** | **Tree Model** | LightGBM Tuned (max_depth=5, 20 leaves, E3 features + target statistics OOF) | **0.1667** | 2.49 | **+30.28%** | Bắt phi tương tác phi tuyến |
@@ -32,8 +31,10 @@ Dự án đã chuẩn hóa 100% chiến lược phân chia dữ liệu đồng b
 ```text
 cafe-revenue-regression/
 ├── data/
-│   └── raw/                 # train.csv, stores.csv, weather.csv, holidays.csv, sample_submission.csv
-├── regression_splits/       # Nơi lưu trữ DUY NHẤT cho train.csv & val.csv (theo chuẩn Regression_Plan.md)
+│   ├── raw/                 # train.csv, stores.csv, weather.csv, holidays.csv
+│   ├── clean/               # train_clean, stores_clean, weather_clean, holidays_daily (.parquet & .csv)
+│   └── processed/           # train.csv, val.csv đã xử lý trùng lặp & predictions
+├── regression_splits/       # Thư mục split chuẩn (train.csv, val.csv) đồng bộ starter_cafe.ipynb
 ├── models/
 │   ├── baseline_median.json # Model artifact lưu các bảng lookup trung vị (Giai đoạn 1)
 │   ├── best_linear_model.joblib # Pipeline mô hình tuyến tính Ridge tốt nhất (Giai đoạn 2)
@@ -42,13 +43,18 @@ cafe-revenue-regression/
 │   ├── best_ensemble_model.joblib # Mô hình Weighted Ensemble + Duan Smearing tối ưu nhất (Giai đoạn 5)
 │   └── best_production_model.joblib # Pipeline mô hình Champion hoàn chỉnh sẵn sàng phục vụ suy luận
 ├── notebooks/
+│   ├── 00_data_cleaning_and_verification.ipynb # Notebook Giai đoạn 0: Làm sạch có kiểm chứng & kiểm thử hợp đồng
 │   ├── 01_baseline_reproduction.ipynb  # Notebook tái lập và phân tích baseline (GĐ 1)
 │   ├── 02_linear_models.ipynb          # Notebook thực nghiệm & phân tích hệ số tuyến tính (GĐ 2)
 │   ├── 03_tree_models.ipynb            # Notebook thực nghiệm & phân tích phi tuyến cây (GĐ 3)
 │   ├── 04_target_transformation.ipynb  # Notebook thực nghiệm biến đổi target & hàm loss (GĐ 4)
 │   ├── 05_lags_and_ensemble.ipynb      # Notebook thực nghiệm phân tích lags & kiến trúc ensemble (GĐ 5)
+│   ├── 07_test.ipynb                   # Thực nghiệm xử lý ngoại lệ đa quy mô (1000x, 10x, 0.1x) & Champion Model
 │   └── end_to_end_training_pipeline.ipynb # Master Notebook từ đầu đến cuối chuẩn 10 bước
 ├── reports/
+│   ├── data_quality_report.md          # Báo cáo chi tiết Giai đoạn 0 (Chất lượng dữ liệu & Ablation C0-C5)
+│   ├── outliers_flagged.csv            # Sổ đăng ký 110 dòng ngoại lệ & đột biến đã gắn cờ
+│   ├── data_cleaning_ablation.csv      # Bảng số liệu chi tiết nghiệm thu Ablation C0-C5
 │   ├── baseline_report.md              # Báo cáo chi tiết Giai đoạn 1
 │   ├── baseline_val_predictions.csv    # Kết quả dự báo baseline trên Q4/2025
 │   ├── linear_models_report.md         # Báo cáo chi tiết Giai đoạn 2 (Mô hình tuyến tính)
@@ -63,6 +69,7 @@ cafe-revenue-regression/
 ├── src/
 │   ├── config.py            # Cấu hình đường dẫn, thời gian split và hằng số
 │   ├── data/
+│   │   ├── clean.py         # Pipeline làm sạch, sửa lỗi đơn vị, phát hiện đột biến & contracts (GĐ 0)
 │   │   ├── load.py          # Load dữ liệu, deduplication, sinh temporal splits
 │   │   └── join.py          # Ghép nối an toàn đa nguồn (stores, weather, holidays)
 │   ├── features/
@@ -81,12 +88,14 @@ cafe-revenue-regression/
 │   │   ├── target_transform.py # TargetTransformer & TransformedTargetTreeModel
 │   │   └── ensemble.py      # WeightedLogEnsemble & StackingLogEnsemble
 │   └── experiments/
+│       ├── run_data_cleaning.py # Pipeline chính thực thi Giai đoạn 0 (Làm sạch có kiểm chứng)
 │       ├── run_baseline.py      # Pipeline chính thực thi Giai đoạn 1
 │       ├── run_linear_models.py  # Pipeline chính thực thi Giai đoạn 2
 │       ├── run_tree_models.py    # Pipeline chính thực thi Giai đoạn 3
 │       ├── run_target_transform.py # Pipeline chính thực thi Giai đoạn 4
 │       └── run_lags_and_ensemble.py # Pipeline chính thực thi Giai đoạn 5
 ├── tests/
+│   ├── test_data_contracts.py# Unit test tự động kiểm thử hợp đồng dữ liệu Phase 0
 │   ├── test_metrics.py       # Unit test cho hàm metric
 │   ├── test_baseline.py      # Unit test cho baseline model
 │   ├── test_splits.py        # Unit test cho hợp đồng dữ liệu và splits
@@ -96,17 +105,36 @@ cafe-revenue-regression/
 │   ├── test_target_transforms.py # Unit test cho bộ biến đổi target & bias adjustments
 │   └── test_ensemble.py      # Unit test cho mô hình ensemble blending và stacking
 ├── scripts/
+│   ├── build_00_data_cleaning_notebook.py # Script dựng notebook 00
 │   ├── build_notebook.py         # Script dựng notebook 01
 │   ├── build_linear_notebook.py  # Script dựng notebook 02
 │   ├── build_tree_notebook.py    # Script dựng notebook 03
 │   ├── build_target_notebook.py  # Script dựng notebook 04
 │   ├── build_ensemble_notebook.py # Script dựng notebook 05
+│   ├── build_07_test_notebook.py # Script dựng và chạy thực nghiệm Notebook 07
 │   └── build_end_to_end_notebook.py # Script dựng Master Pipeline Notebook
-├── submission.csv           # File nộp bài Kaggle chính thức (định dạng id, revenue)
 ├── requirements.txt         # Danh sách thư viện phụ thuộc (pinned versions)
 ├── venv/                    # Môi trường ảo Python (cục bộ)
 └── README.md
 ```
+
+---
+
+## 1.1. Kết quả Giai đoạn 0 — Làm sạch có kiểm chứng (Verified Data Cleaning)
+
+Giai đoạn 0 thiết lập nền tảng dữ liệu sạch tuân thủ nghiêm ngặt **Kiến trúc ba lớp dữ liệu**:
+- **Khử trùng lặp:** 132 bản ghi trùng lặp hoàn toàn được loại bỏ, đưa `train.csv` về đúng **26.500 dòng sạch**.
+- **Sửa lỗi đơn vị S12:** 30 bản ghi tháng 03/2024 của S12 bị ghi nhầm theo Nghìn VND (> 10.000 - 53.600) được chia cho 1.000, đưa trung vị về 29.17 triệu VND (khớp tự nhiên với tháng 2 và tháng 4, không xóa dòng).
+- **Phân loại 75 đột biến doanh thu:** 50 đột biến cao (~10x) và 25 đột biến thấp (~0.1x) được gắn cờ và loại khỏi tập fit. 6 đột biến nằm trong Q4/2025 tạo thành **sàn nhiễu ~0.010 - 0.012 RMSLE**.
+- **Hiệu chuẩn thời tiết Fahrenheit:** 22 ngày liên tiếp tại TP.HCM (10/06–01/07/2025) đo bằng °F (84–89.2 °F) được chuyển về °C (27.9–31.8 °C). Dựng lưới thời tiết đủ 1.642 dòng, điền thiếu an toàn.
+- **Store & Holiday:** Impute `area_m2` cho S19 và S24 theo tỷ lệ $2.607 \text{ m}^2/\text{ghế}$. Tổng hợp 53 ngày lễ duy nhất và tạo cờ Tết chuyên biệt.
+- **Ablation C0–C5:** Xác nhận cấu hình **C4** tối ưu nhất, ngăn chặn tình trạng nổ tung sai số tại Fold A Tết (LightGBM RMSLE giảm từ 0.7164 xuống 0.3340).
+- **Artifacts:**
+  * Báo cáo toàn diện: [`reports/data_quality_report.md`](reports/data_quality_report.md)
+  * Sổ đăng ký ngoại lệ: [`reports/outliers_flagged.csv`](reports/outliers_flagged.csv)
+  * Số liệu ablation: [`reports/data_cleaning_ablation.csv`](reports/data_cleaning_ablation.csv)
+  * Notebook thực nghiệm: [`notebooks/00_data_cleaning_and_verification.ipynb`](notebooks/00_data_cleaning_and_verification.ipynb)
+  * Bộ test hợp đồng tự động: [`tests/test_data_contracts.py`](tests/test_data_contracts.py) (6/6 tests passed)
 
 ---
 
@@ -275,37 +303,43 @@ cafe-revenue-regression/
 pip install -r requirements.txt
 ```
 
-### 7.2. Chạy pipeline Giai đoạn 1 (Baseline)
+### 7.2. Chạy pipeline Giai đoạn 0 (Làm sạch có kiểm chứng)
+```powershell
+python -m src.experiments.run_data_cleaning
+```
+
+### 7.3. Chạy pipeline Giai đoạn 1 (Baseline)
 ```powershell
 python src/experiments/run_baseline.py
 ```
 
-### 7.3. Chạy pipeline Giai đoạn 2 (Mô hình tuyến tính)
+### 7.4. Chạy pipeline Giai đoạn 2 (Mô hình tuyến tính)
 ```powershell
 python src/experiments/run_linear_models.py
 ```
 
-### 7.4. Chạy pipeline Giai đoạn 3 (Tree-based Models)
+### 7.5. Chạy pipeline Giai đoạn 3 (Tree-based Models)
 ```powershell
 python src/experiments/run_tree_models.py
 ```
 
-### 7.5. Chạy pipeline Giai đoạn 4 (Target Transformation)
+### 7.6. Chạy pipeline Giai đoạn 4 (Target Transformation)
 ```powershell
 python src/experiments/run_target_transform.py
 ```
 
-### 7.6. Chạy pipeline Giai đoạn 5 (Lags & Ensemble Models)
+### 7.7. Chạy pipeline Giai đoạn 5 (Lags & Ensemble Models)
 ```powershell
 python src/experiments/run_lags_and_ensemble.py
 ```
 
-### 7.7. Chạy toàn bộ Unit Tests (42 tests)
+### 7.8. Chạy toàn bộ Unit Tests (48 tests - 100% Passed)
 ```powershell
 pytest tests/
 ```
 
-### 7.8. Mở và Xem Notebooks Tương tác
+### 7.9. Mở và Xem Notebooks Tương tác
+- [`notebooks/00_data_cleaning_and_verification.ipynb`](notebooks/00_data_cleaning_and_verification.ipynb): **Giai đoạn 0 — Làm sạch có kiểm chứng**: Kiểm toán chất lượng (DQ-01 đến DQ-15), sửa lỗi S12 x1000, cờ 75 đột biến, chuẩn hóa thời tiết Fahrenheit & stores, tái lập baseline và sàn nhiễu 0.012, nghiệm thu ablation C0–C5.
 - [`notebooks/01_baseline_reproduction.ipynb`](notebooks/01_baseline_reproduction.ipynb): Tái lập Baseline & Phân tích lỗi sơ bộ.
 - [`notebooks/02_linear_models.ipynb`](notebooks/02_linear_models.ipynb): Toàn bộ quy trình Giai đoạn 2 với biểu đồ so sánh mô hình tuyến tính và phân tích hệ số.
 - [`notebooks/03_tree_models.ipynb`](notebooks/03_tree_models.ipynb): Toàn bộ quy trình Giai đoạn 3 với biểu đồ so sánh Random Forest, ExtraTrees, HistGBR, LightGBM.
