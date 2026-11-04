@@ -1,0 +1,16 @@
+{
+  "model_name": "Weighted Blend Ensemble (SOTA)",
+  "holdout_val_rmsle": 0.1218,
+  "seasonal_tet_rmsle": 0.1459,
+  "val_mae_m_vnd": 2.03,
+  "val_rmse_m_vnd": 2.86,
+  "val_r2": 0.895,
+  "starter_baseline_rmsle": 0.2276,
+  "relative_improvement_pct": 46.5,
+  "ensemble_weights": {
+    "LightGBM": 0.43,
+    "CatBoost": 0.281,
+    "XGBoost": 0.289,
+    "Ridge (L2 Linear)": 0.0
+  }
+}
