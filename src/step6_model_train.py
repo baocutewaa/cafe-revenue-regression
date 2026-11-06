@@ -151,15 +151,15 @@ def get_candidate_models() -> Dict[str, Any]:
     """
     models = {
         "Dummy (Median)": DummyRegressor(strategy="median"),
-        "Ridge (L2 Linear)": Ridge(alpha=1.0, random_state=42),
+        "Ridge (L2 Linear)": Ridge(alpha=5.0, random_state=42),
         "DecisionTree": DecisionTreeRegressor(max_depth=8, min_samples_leaf=15, random_state=42),
         "KNeighbors (k=31)": KNeighborsRegressor(n_neighbors=31, weights="distance"),
         "SVR (RBF Kernel)": SVR(kernel="rbf", C=2.0, epsilon=0.02, max_iter=2500),
         "MLP (64, 32)": MLPRegressor(hidden_layer_sizes=(64, 32), max_iter=200, random_state=42, early_stopping=True),
-        "HistGradientBoosting": HistGradientBoostingRegressor(max_iter=250, learning_rate=0.05, max_leaf_nodes=31, random_state=42),
-        "LightGBM": lgb.LGBMRegressor(n_estimators=450, learning_rate=0.035, num_leaves=28, subsample=0.8, colsample_bytree=0.75, min_child_samples=20, reg_alpha=1.2, reg_lambda=1.2, random_state=42, verbose=-1),
-        "CatBoost": cb.CatBoostRegressor(iterations=550, learning_rate=0.04, depth=6, l2_leaf_reg=3.5, random_state=42, verbose=0),
-        "XGBoost": xgb.XGBRegressor(n_estimators=450, learning_rate=0.035, max_depth=5, subsample=0.8, colsample_bytree=0.75, reg_alpha=1.0, reg_lambda=2.0, tree_method="hist", random_state=42)
+        "HistGradientBoosting": HistGradientBoostingRegressor(max_iter=300, learning_rate=0.035, max_leaf_nodes=31, l2_regularization=1.5, random_state=42),
+        "LightGBM": lgb.LGBMRegressor(n_estimators=500, learning_rate=0.03, num_leaves=26, subsample=0.8, colsample_bytree=0.75, min_child_samples=20, reg_alpha=1.2, reg_lambda=1.5, random_state=42, verbose=-1),
+        "CatBoost": cb.CatBoostRegressor(iterations=650, learning_rate=0.035, depth=6, l2_leaf_reg=4.0, random_state=42, verbose=0),
+        "XGBoost": xgb.XGBRegressor(n_estimators=500, learning_rate=0.03, max_depth=5, subsample=0.8, colsample_bytree=0.75, reg_alpha=1.0, reg_lambda=2.0, tree_method="hist", random_state=42)
     }
     return models
 

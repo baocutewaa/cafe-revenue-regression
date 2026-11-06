@@ -298,6 +298,22 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     res["is_womens_day"] = (((res["month"] == 3) & (res["day"] == 8)) | ((res["month"] == 10) & (res["day"] == 20))).astype(int)
     res["is_valentine"] = ((res["month"] == 2) & (res["day"] == 14)).astype(int)
     
+    # Tương tác Ngày Phụ nữ (8/3, 20/10) và Valentine (14/2) theo từng mô hình quán
+    is_mall = (res["store_type"] == "mall").astype(int)
+    is_street = (res["store_type"] == "street").astype(int)
+    is_res = (res["store_type"] == "residential").astype(int)
+    is_office = (res["store_type"] == "office").astype(int)
+    res["is_womens_day_mall"] = res["is_womens_day"] * is_mall
+    res["is_womens_day_street"] = res["is_womens_day"] * is_street
+    res["is_womens_day_res"] = res["is_womens_day"] * is_res
+    res["is_valentine_mall"] = res["is_valentine"] * is_mall
+    res["is_valentine_street"] = res["is_valentine"] * is_street
+    
+    # Đặc thù dịp cận Tết & sau Tết theo loại quán
+    res["is_post_tet_office_drop"] = (is_office & res["days_from_tet"].between(3, 7)).astype(int)
+    res["is_pre_tet_uni_drop"] = (is_uni & res["days_from_tet"].between(-10, -3)).astype(int)
+    res["is_post_tet_uni_drop"] = (is_uni & res["days_from_tet"].between(3, 10)).astype(int)
+    
     # Đảm bảo cờ ngày lễ không có NaN
     res["is_national_holiday"] = res["is_national_holiday"].fillna(0).astype(int)
     res["is_event_holiday"] = res["is_event_holiday"].fillna(0).astype(int)
@@ -319,6 +335,7 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     res["is_grand_opening"] = res["days_since_open"].isin([0, 1, 2]).astype(int)
     res["is_ramp_up_phase"] = ((res["days_since_open"] >= 3) & (res["days_since_open"] <= 60)).astype(int)
     res["ramp_up_factor"] = compute_ramp_up_factor(res["days_since_open"])
+    res["log_ramp_up_factor"] = np.log(np.maximum(0.2, res["ramp_up_factor"]))
     
     if "area_per_seat" not in res.columns:
         res["area_per_seat"] = res["area_m2"] / res["seats"]
@@ -337,8 +354,9 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     res["rain_x_outdoor"] = res["log_rain"] * is_outdoor
     res["rain_x_mall"] = res["log_rain"] * is_mall
     
-    # Tương tác khuyến mãi với cuối tuần
+    # Tương tác khuyến mãi với cuối tuần và thứ Sáu
     res["promo_x_weekend"] = res["is_promo"] * res["is_weekend"]
+    res["is_promo_friday"] = res["is_promo"] * (res["dow"] == 4).astype(int)
     
     return res
 

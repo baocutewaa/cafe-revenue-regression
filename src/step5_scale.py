@@ -114,6 +114,29 @@ class LogTargetRegressorWrapper(BaseEstimator, RegressorMixin):
         return inverse_transform_target(pred_log)
 
 
+class MultiSeedBaggedPipeline(BaseEstimator, RegressorMixin):
+    """
+    Bộ bao bọc Multi-Seed Bagging cho danh sách các mô hình Pipeline:
+    Huấn luyện nhiều mô hình với các hạt ngẫu nhiên (random seeds) khác nhau,
+    sau đó tổng hợp dự báo bằng trung bình logarit nhằm triệt tiêu phương sai (variance)
+    và chống rung lắc (shakeup) tối đa trên tập Private Leaderboard (71%).
+    """
+    def __init__(self, pipelines: Optional[List[Any]] = None):
+        self.pipelines = pipelines if pipelines is not None else []
+        
+    def fit(self, X: Any, y: np.ndarray):
+        for p in self.pipelines:
+            p.fit(X, y)
+        return self
+        
+    def predict(self, X: Any) -> np.ndarray:
+        if not self.pipelines:
+            return np.zeros(len(X))
+        preds_log = [np.log1p(np.maximum(0.0, p.predict(X))) for p in self.pipelines]
+        avg_log = np.mean(preds_log, axis=0)
+        return np.maximum(0.0, np.expm1(avg_log))
+
+
 # ------------------------------------------------------------------------------
 # 2. PHÂN LOẠI CÁC CỘT ĐẶC TRƯNG & XÂY DỰNG COLUMNTANSFORMER
 # ------------------------------------------------------------------------------
