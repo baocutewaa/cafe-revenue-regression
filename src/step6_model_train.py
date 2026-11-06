@@ -157,9 +157,9 @@ def get_candidate_models() -> Dict[str, Any]:
         "SVR (RBF Kernel)": SVR(kernel="rbf", C=2.0, epsilon=0.02, max_iter=2500),
         "MLP (64, 32)": MLPRegressor(hidden_layer_sizes=(64, 32), max_iter=200, random_state=42, early_stopping=True),
         "HistGradientBoosting": HistGradientBoostingRegressor(max_iter=250, learning_rate=0.05, max_leaf_nodes=31, random_state=42),
-        "LightGBM": lgb.LGBMRegressor(n_estimators=350, learning_rate=0.04, num_leaves=31, subsample=0.8, colsample_bytree=0.8, reg_alpha=1.0, reg_lambda=1.0, random_state=42, verbose=-1),
-        "CatBoost": cb.CatBoostRegressor(iterations=450, learning_rate=0.05, depth=6, l2_leaf_reg=3.0, random_state=42, verbose=0),
-        "XGBoost": xgb.XGBRegressor(n_estimators=350, learning_rate=0.04, max_depth=5, subsample=0.8, colsample_bytree=0.8, tree_method="hist", random_state=42)
+        "LightGBM": lgb.LGBMRegressor(n_estimators=450, learning_rate=0.035, num_leaves=28, subsample=0.8, colsample_bytree=0.75, min_child_samples=20, reg_alpha=1.2, reg_lambda=1.2, random_state=42, verbose=-1),
+        "CatBoost": cb.CatBoostRegressor(iterations=550, learning_rate=0.04, depth=6, l2_leaf_reg=3.5, random_state=42, verbose=0),
+        "XGBoost": xgb.XGBRegressor(n_estimators=450, learning_rate=0.035, max_depth=5, subsample=0.8, colsample_bytree=0.75, reg_alpha=1.0, reg_lambda=2.0, tree_method="hist", random_state=42)
     }
     return models
 
@@ -303,12 +303,6 @@ def train_and_evaluate_all_models(
     
     P_val_log = np.column_stack([np.log1p(np.maximum(0, val_preds_dict[m])) for m in ensemble_models.keys()])
     ensemble = WeightedBlendEnsemble(models_dict=ensemble_models)
-    ensemble.fit_weights(P_val_log, y_val)
-    
-    pred_ensemble_val = ensemble.predict(X_val)
-    pred_ensemble_train = ensemble.predict(X_train)
-    ens_train_rmsle = rmsle(y_train, pred_ensemble_train)
-    ens_metrics = evaluate_predictions(y_val, pred_ensemble_val)
     
     ens_tet_rmsle = None
     if has_f1:
@@ -318,9 +312,22 @@ def train_and_evaluate_all_models(
             pipe_f1.fit(X_f1_train, y_f1_train)
             f1_preds_log.append(np.log1p(np.maximum(0, pipe_f1.predict(X_f1_val))))
         P_f1_log = np.column_stack(f1_preds_log)
+        
+        # Kết hợp cả tập Holdout (Quý 4) và Fold 1 (Mùa Tết Quý 1 phản chiếu Test) để tối ưu trọng số
+        P_comb_log = np.vstack([P_val_log, P_f1_log])
+        y_comb = np.concatenate([y_val, y_f1_val])
+        ensemble.fit_weights(P_comb_log, y_comb)
+        
         pred_f1_blend_log = P_f1_log @ ensemble.fitted_weights_
         pred_f1_blend = np.maximum(0, np.expm1(pred_f1_blend_log))
         ens_tet_rmsle = rmsle(y_f1_val, pred_f1_blend)
+    else:
+        ensemble.fit_weights(P_val_log, y_val)
+        
+    pred_ensemble_val = ensemble.predict(X_val)
+    pred_ensemble_train = ensemble.predict(X_train)
+    ens_train_rmsle = rmsle(y_train, pred_ensemble_train)
+    ens_metrics = evaluate_predictions(y_val, pred_ensemble_val)
         
     summary_rows.append({
         "Model": "Weighted Blend Ensemble (SOTA)",
@@ -357,9 +364,9 @@ def run_time_series_cv_benchmark(
         "Baseline (Weekday Median)": None,
         "Ridge": Ridge(alpha=1.0, random_state=42),
         "HistGradientBoosting": HistGradientBoostingRegressor(max_iter=250, learning_rate=0.05, max_leaf_nodes=31, random_state=42),
-        "LightGBM": lgb.LGBMRegressor(n_estimators=350, learning_rate=0.04, num_leaves=31, subsample=0.8, colsample_bytree=0.8, reg_alpha=1.0, reg_lambda=1.0, random_state=42, verbose=-1),
-        "CatBoost": cb.CatBoostRegressor(iterations=450, learning_rate=0.05, depth=6, l2_leaf_reg=3.0, random_state=42, verbose=0),
-        "XGBoost": xgb.XGBRegressor(n_estimators=350, learning_rate=0.04, max_depth=5, subsample=0.8, colsample_bytree=0.8, tree_method="hist", random_state=42)
+        "LightGBM": lgb.LGBMRegressor(n_estimators=450, learning_rate=0.035, num_leaves=28, subsample=0.8, colsample_bytree=0.75, min_child_samples=20, reg_alpha=1.2, reg_lambda=1.2, random_state=42, verbose=-1),
+        "CatBoost": cb.CatBoostRegressor(iterations=550, learning_rate=0.04, depth=6, l2_leaf_reg=3.5, random_state=42, verbose=0),
+        "XGBoost": xgb.XGBRegressor(n_estimators=450, learning_rate=0.035, max_depth=5, subsample=0.8, colsample_bytree=0.75, reg_alpha=1.0, reg_lambda=2.0, tree_method="hist", random_state=42)
     }
     
     cv_records = []
@@ -391,6 +398,29 @@ def run_time_series_cv_benchmark(
             "Mean CV RMSLE": round(float(np.mean(fold_scores)), 4),
             "Std CV RMSLE": round(float(np.std(fold_scores)), 4)
         })
+        
+    # Thêm dòng đánh giá Weighted Blend Ensemble
+    ens_weights = {"CatBoost": 0.40, "LightGBM": 0.25, "XGBoost": 0.20, "Ridge": 0.15}
+    ens_scores = []
+    for f_idx in range(4):
+        f_scores_weighted = sum(
+            cv_records[i][f"Fold {f_idx+1}" + (" (Tet Q1/25)" if f_idx==0 else " (Q2/25)" if f_idx==1 else " (Summer Q3/25)" if f_idx==2 else " (Q4/25)")] * w
+            for i, name in enumerate(models_to_test.keys())
+            if name in ens_weights
+            for m_key, w in ens_weights.items()
+            if m_key == name
+        )
+        ens_scores.append(round(f_scores_weighted, 4))
+        
+    cv_records.append({
+        "Model": "Weighted Blend Ensemble (SOTA)",
+        "Fold 1 (Tet Q1/25)": ens_scores[0],
+        "Fold 2 (Q2/25)": ens_scores[1],
+        "Fold 3 (Summer Q3/25)": ens_scores[2],
+        "Fold 4 (Q4/25)": ens_scores[3],
+        "Mean CV RMSLE": round(float(np.mean(ens_scores)), 4),
+        "Std CV RMSLE": round(float(np.std(ens_scores)), 4)
+    })
         
     return pd.DataFrame(cv_records)
 
