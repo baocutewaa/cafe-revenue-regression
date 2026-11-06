@@ -127,7 +127,7 @@ def get_feature_column_types(df: pd.DataFrame) -> Tuple[List[str], List[str], Li
     categorical_cols = ["city", "district", "store_type", "holiday_name_clean"]
     
     ignore_cols = [
-        "revenue", "date", "open_date", "open_date_dt", "store_id", "id", "year", "t_years", "days_from_tet"
+        "revenue", "date", "open_date", "open_date_dt", "store_id", "id", "year", "t_years", "days_from_tet", "days_from_tet_exact"
     ]
     
     numeric_cols = [

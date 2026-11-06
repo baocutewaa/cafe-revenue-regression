@@ -155,8 +155,8 @@ def clean_train_outliers(
     sw_med = df.groupby(["store_id", "dow"])["revenue"].transform("median")
     sw_ratio = df["revenue"] / sw_med
     
-    # 4. Sửa lỗi 10x
-    mask_10x = (sw_ratio > 3.8) & (df["days_since_open"] > 2)
+    # 4. Sửa lỗi 10x (kèm điều kiện tỷ số > 3.0 cho ngày thường để phát hiện S17 Mùng 1 Tết 2024 có sw_ratio=3.34)
+    mask_10x = ((sw_ratio > 3.8) | ((sw_ratio > 3.0) & (df["days_since_open"] > 2) & (df["is_promo"] == 0))) & (df["days_since_open"] > 2)
     cnt_10x = int(mask_10x.sum())
     df.loc[mask_10x, "revenue"] /= 10.0
     
@@ -164,8 +164,8 @@ def clean_train_outliers(
     sw_med = df.groupby(["store_id", "dow"])["revenue"].transform("median")
     sw_ratio = df["revenue"] / sw_med
     
-    # 5. Sửa lỗi 0.1x
-    mask_01x = sw_ratio < 0.16
+    # 5. Sửa lỗi 0.1x (mở rộng ngưỡng lên 0.18 để phát hiện chính xác S29 ngày 02/09/2024 có sw_ratio=0.164)
+    mask_01x = sw_ratio < 0.18
     cnt_01x = int(mask_01x.sum())
     df.loc[mask_01x, "revenue"] *= 10.0
     
@@ -273,6 +273,7 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     res["year"] = date_dt.dt.year
     tet_dt = res["year"].map(TET_DATES)
     res["days_from_tet"] = (date_dt - tet_dt).dt.days
+    res["days_from_tet_exact"] = res["days_from_tet"]
     # Giới hạn days_from_tet_clipped trong cửa sổ [-21, 21] ngày để triệt tiêu đa cộng tuyến với month
     res["days_from_tet_clipped"] = np.clip(res["days_from_tet"], -21, 21)
     
@@ -300,6 +301,12 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     # Đảm bảo cờ ngày lễ không có NaN
     res["is_national_holiday"] = res["is_national_holiday"].fillna(0).astype(int)
     res["is_event_holiday"] = res["is_event_holiday"].fillna(0).astype(int)
+    
+    # Tương tác ngày lễ với loại quán: văn phòng/đại học giảm sâu (-55%), mall/street/residential tăng (+15-25%)
+    is_work = res["store_type"].isin(["office", "university"]).astype(int)
+    is_retail = res["store_type"].isin(["mall", "street", "residential"]).astype(int)
+    res["is_holiday_work_drop"] = res["is_national_holiday"] * is_work
+    res["is_holiday_retail_boost"] = res["is_national_holiday"] * is_retail
     
     # --------------------------------------------------------------------------
     # 3. Nhóm Tĩnh & Vòng đời Cửa hàng (Store Static & Lifecycle)
@@ -356,6 +363,7 @@ class DeSeasonalizedStoreStats(BaseEstimator, TransformerMixin):
         self.store_base_log_ = {}
         self.store_dow_log_ = {}
         self.type_city_dow_log_ = {}
+        self.tet_curve_ = {}
         self.prior_model_ = None
         self.prior_feature_cols_ = None
         
@@ -443,6 +451,17 @@ class DeSeasonalizedStoreStats(BaseEstimator, TransformerMixin):
                 shrunk_val = prior_val
                 
             self.store_base_log_[sid] = shrunk_val
+
+        # 4. Học đường cong tỷ lệ Tết Nguyên Đán đa cấp theo (store_type, days_from_tet_exact)
+        df["revenue_orig"] = np.maximum(0.0, y)
+        d_col = "days_from_tet_exact" if "days_from_tet_exact" in df.columns else "days_from_tet"
+        norm_mask = (df[d_col] < -14) | (df[d_col] > 14)
+        norm_mask = norm_mask & (df["is_promo"] == 0)
+        base_map = df[norm_mask].groupby(["store_id", "dow"])["revenue_orig"].median().to_dict()
+        df_base = [base_map.get((s, w), np.nan) for s, w in zip(df["store_id"], df["dow"])]
+        df["ratio_tet"] = df["revenue_orig"] / pd.Series(df_base, index=df.index).fillna(float(np.median(y)))
+        tet_mask = df[d_col].between(-18, 18)
+        self.tet_curve_ = df[tet_mask].groupby(["store_type", d_col])["ratio_tet"].median().to_dict()
             
         return self
         
@@ -465,6 +484,14 @@ class DeSeasonalizedStoreStats(BaseEstimator, TransformerMixin):
         
         # 4. store_dow_ratio = store_dow_log_rev - store_base_log_rev
         res["store_dow_ratio"] = res["store_dow_log_rev"] - res["store_base_log_rev"]
+
+        # 5. feat_tet_log_factor (Hệ số điều chỉnh logarit mùa Tết theo loại quán)
+        d_col = "days_from_tet_exact" if "days_from_tet_exact" in res.columns else "days_from_tet"
+        factors = [
+            np.log(np.maximum(0.2, self.tet_curve_.get((st, d), 1.0))) if -18 <= d <= 18 else 0.0
+            for st, d in zip(res["store_type"], res[d_col])
+        ]
+        res["feat_tet_log_factor"] = np.array(factors, dtype=float)
         
         return res
 
