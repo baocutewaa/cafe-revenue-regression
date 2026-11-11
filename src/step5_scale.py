@@ -77,7 +77,22 @@ class TrendAwareLogTargetWrapper(BaseEstimator, RegressorMixin):
         y_log = np.log1p(np.clip(y_arr, 0.0, None))
         
         if np.ptp(t) > 0.01:
-            self.slope_, self.intercept_ = np.polyfit(t, y_log, 1)
+            if isinstance(X, pd.DataFrame) and "store_id" in X.columns and X["store_id"].nunique() > 1:
+                # Within-Store Panel Fixed Effects (Store-demeaned OLS slope):
+                # Loại bỏ độ lệch cơ cấu (composition bias) từ việc mở các quán mới trong năm 2025.
+                # Chuẩn hóa khử trung bình theo quán cho CẢ y_log và t để đạt ước lượng OLS Within-Estimator kinh tế lượng chuẩn xác.
+                s_mean_y = pd.Series(y_log, index=X.index).groupby(X["store_id"]).transform("mean").values
+                s_mean_t = pd.Series(t, index=X.index).groupby(X["store_id"]).transform("mean").values
+                y_c = y_log - s_mean_y
+                t_c = t - s_mean_t
+                denom = np.sum(t_c ** 2)
+                if denom > 1e-6:
+                    self.slope_ = float(np.sum(t_c * y_c) / denom)
+                    self.intercept_ = float(np.mean(y_log) - self.slope_ * np.mean(t))
+                else:
+                    self.slope_, self.intercept_ = 0.0, float(np.mean(y_log))
+            else:
+                self.slope_, self.intercept_ = np.polyfit(t, y_log, 1)
         else:
             self.slope_, self.intercept_ = 0.0, float(np.mean(y_log))
             
@@ -112,6 +127,29 @@ class LogTargetRegressorWrapper(BaseEstimator, RegressorMixin):
     def predict(self, X: Any) -> np.ndarray:
         pred_log = self.regressor_.predict(X)
         return inverse_transform_target(pred_log)
+
+
+class MultiSeedBaggedPipeline(BaseEstimator, RegressorMixin):
+    """
+    Bộ bao bọc Multi-Seed Bagging cho danh sách các mô hình Pipeline:
+    Huấn luyện nhiều mô hình với các hạt ngẫu nhiên (random seeds) khác nhau,
+    sau đó tổng hợp dự báo bằng trung bình logarit nhằm triệt tiêu phương sai (variance)
+    và chống rung lắc (shakeup) tối đa trên tập Private Leaderboard (71%).
+    """
+    def __init__(self, pipelines: Optional[List[Any]] = None):
+        self.pipelines = pipelines if pipelines is not None else []
+        
+    def fit(self, X: Any, y: np.ndarray):
+        for p in self.pipelines:
+            p.fit(X, y)
+        return self
+        
+    def predict(self, X: Any) -> np.ndarray:
+        if not self.pipelines:
+            return np.zeros(len(X))
+        preds_log = [np.log1p(np.maximum(0.0, p.predict(X))) for p in self.pipelines]
+        avg_log = np.mean(preds_log, axis=0)
+        return np.maximum(0.0, np.expm1(avg_log))
 
 
 # ------------------------------------------------------------------------------

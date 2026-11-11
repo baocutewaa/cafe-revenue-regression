@@ -298,6 +298,22 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     res["is_womens_day"] = (((res["month"] == 3) & (res["day"] == 8)) | ((res["month"] == 10) & (res["day"] == 20))).astype(int)
     res["is_valentine"] = ((res["month"] == 2) & (res["day"] == 14)).astype(int)
     
+    # Tương tác Ngày Phụ nữ (8/3, 20/10) và Valentine (14/2) theo từng mô hình quán
+    is_mall = (res["store_type"] == "mall").astype(int)
+    is_street = (res["store_type"] == "street").astype(int)
+    is_res = (res["store_type"] == "residential").astype(int)
+    is_office = (res["store_type"] == "office").astype(int)
+    res["is_womens_day_mall"] = res["is_womens_day"] * is_mall
+    res["is_womens_day_street"] = res["is_womens_day"] * is_street
+    res["is_womens_day_res"] = res["is_womens_day"] * is_res
+    res["is_valentine_mall"] = res["is_valentine"] * is_mall
+    res["is_valentine_street"] = res["is_valentine"] * is_street
+    
+    # Đặc thù dịp cận Tết & sau Tết theo loại quán
+    res["is_post_tet_office_drop"] = (is_office & res["days_from_tet"].between(3, 7)).astype(int)
+    res["is_pre_tet_uni_drop"] = (is_uni & res["days_from_tet"].between(-10, -3)).astype(int)
+    res["is_post_tet_uni_drop"] = (is_uni & res["days_from_tet"].between(3, 10)).astype(int)
+    
     # Đảm bảo cờ ngày lễ không có NaN
     res["is_national_holiday"] = res["is_national_holiday"].fillna(0).astype(int)
     res["is_event_holiday"] = res["is_event_holiday"].fillna(0).astype(int)
@@ -307,6 +323,13 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     is_retail = res["store_type"].isin(["mall", "street", "residential"]).astype(int)
     res["is_holiday_work_drop"] = res["is_national_holiday"] * is_work
     res["is_holiday_retail_boost"] = res["is_national_holiday"] * is_retail
+    
+    # Tương tác cận Tết (Pre-Tet) và lõi Tết (Tet Core) theo đặc thù mô hình quán
+    res["is_pre_tet_retail_boost"] = res["is_pre_tet_shopping"] * is_retail
+    res["is_pre_tet_work_drop"] = res["is_pre_tet_shopping"] * is_work
+    res["is_tet_core_mall"] = res["is_tet_core"] * is_mall
+    res["is_tet_core_street"] = res["is_tet_core"] * is_street
+    res["is_tet_core_res"] = res["is_tet_core"] * is_res
     
     # --------------------------------------------------------------------------
     # 3. Nhóm Tĩnh & Vòng đời Cửa hàng (Store Static & Lifecycle)
@@ -319,6 +342,7 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     res["is_grand_opening"] = res["days_since_open"].isin([0, 1, 2]).astype(int)
     res["is_ramp_up_phase"] = ((res["days_since_open"] >= 3) & (res["days_since_open"] <= 60)).astype(int)
     res["ramp_up_factor"] = compute_ramp_up_factor(res["days_since_open"])
+    res["log_ramp_up_factor"] = np.log(np.maximum(0.2, res["ramp_up_factor"]))
     
     if "area_per_seat" not in res.columns:
         res["area_per_seat"] = res["area_m2"] / res["seats"]
@@ -337,8 +361,9 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     res["rain_x_outdoor"] = res["log_rain"] * is_outdoor
     res["rain_x_mall"] = res["log_rain"] * is_mall
     
-    # Tương tác khuyến mãi với cuối tuần
+    # Tương tác khuyến mãi với cuối tuần và thứ Sáu
     res["promo_x_weekend"] = res["is_promo"] * res["is_weekend"]
+    res["is_promo_friday"] = res["is_promo"] * (res["dow"] == 4).astype(int)
     
     return res
 
@@ -372,6 +397,11 @@ class DeSeasonalizedStoreStats(BaseEstimator, TransformerMixin):
         y_log = np.log1p(np.clip(y, 0, None))
         df["y_log"] = y_log
         
+        # Tính doanh thu chuẩn hóa đã khử ramp-up (Unramped Log Revenue)
+        # Giúp các quán mới mở muộn (như S01, S45, S19) phản ánh đúng công suất thực khi bước sang 2026
+        log_ramp = df.get("log_ramp_up_factor", pd.Series(0.0, index=df.index))
+        df["y_unramped_log"] = y_log - log_ramp
+        
         self.global_log_mean_ = float(np.mean(y_log))
         
         # 1. Xác định các ngày bình thường để tính mức nền chuẩn
@@ -389,13 +419,21 @@ class DeSeasonalizedStoreStats(BaseEstimator, TransformerMixin):
         # Trung vị theo từng quán
         store_base = normal_df.groupby("store_id")["y_log"].median().to_dict()
         
-        # Trung vị theo (store_id, dow)
-        store_dow = df.groupby(["store_id", "dow"])["y_log"].median().to_dict()
+        # Trung vị theo (store_id, dow) tính trên y_unramped_log trên các ngày sạch (không promo & không Tết)
+        clean_days = df[(df["is_promo"] == 0) & (df["is_tet_core"] == 0)]
+        store_dow = clean_days.groupby(["store_id", "dow"])["y_unramped_log"].median().to_dict()
+        all_store_dow = df.groupby(["store_id", "dow"])["y_unramped_log"].median().to_dict()
+        for k, v in all_store_dow.items():
+            if k not in store_dow:
+                store_dow[k] = v
         self.store_dow_log_ = store_dow
         
-        # Trung vị theo (store_type, city, dow)
-        type_city_dow = df.groupby(["store_type", "city", "dow"])["y_log"].median().to_dict()
-        self.type_city_dow_log_ = type_city_dow
+        # Trung vị theo (store_type, city, dow) trên y_unramped_log
+        self.type_city_dow_log_ = clean_days.groupby(["store_type", "city", "dow"])["y_unramped_log"].median().to_dict()
+        all_type_city_dow = df.groupby(["store_type", "city", "dow"])["y_unramped_log"].median().to_dict()
+        for k, v in all_type_city_dow.items():
+            if k not in self.type_city_dow_log_:
+                self.type_city_dow_log_[k] = v
         
         # 2. Huấn luyện mô hình ước lượng công suất nền tảng (Store Capacity Prior)
         store_meta = df.drop_duplicates(subset=["store_id"])[
@@ -426,13 +464,12 @@ class DeSeasonalizedStoreStats(BaseEstimator, TransformerMixin):
             if hist_base is None:
                 s_df = df[df["store_id"] == sid]
                 if len(s_df) > 0:
-                    ramp_factors = s_df.get("ramp_up_factor", pd.Series(1.0, index=s_df.index))
-                    unramped_log = s_df["y_log"] - np.log(np.maximum(0.2, ramp_factors))
-                    non_promo = unramped_log[s_df["is_promo"] == 0]
-                    if len(non_promo) >= 3:
-                        hist_base = float(non_promo.median())
+                    unramped_s = s_df["y_unramped_log"]
+                    non_promo_s = unramped_s[s_df["is_promo"] == 0]
+                    if len(non_promo_s) >= 3:
+                        hist_base = float(non_promo_s.median())
                     else:
-                        hist_base = float(unramped_log.median())
+                        hist_base = float(unramped_s.median())
             
             # Tính prior từ mô hình vật lý
             prior_val = self.global_log_mean_

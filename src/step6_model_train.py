@@ -151,15 +151,15 @@ def get_candidate_models() -> Dict[str, Any]:
     """
     models = {
         "Dummy (Median)": DummyRegressor(strategy="median"),
-        "Ridge (L2 Linear)": Ridge(alpha=1.0, random_state=42),
+        "Ridge (L2 Linear)": Ridge(alpha=5.0, random_state=42),
         "DecisionTree": DecisionTreeRegressor(max_depth=8, min_samples_leaf=15, random_state=42),
         "KNeighbors (k=31)": KNeighborsRegressor(n_neighbors=31, weights="distance"),
         "SVR (RBF Kernel)": SVR(kernel="rbf", C=2.0, epsilon=0.02, max_iter=2500),
         "MLP (64, 32)": MLPRegressor(hidden_layer_sizes=(64, 32), max_iter=200, random_state=42, early_stopping=True),
-        "HistGradientBoosting": HistGradientBoostingRegressor(max_iter=250, learning_rate=0.05, max_leaf_nodes=31, random_state=42),
-        "LightGBM": lgb.LGBMRegressor(n_estimators=450, learning_rate=0.035, num_leaves=28, subsample=0.8, colsample_bytree=0.75, min_child_samples=20, reg_alpha=1.2, reg_lambda=1.2, random_state=42, verbose=-1),
-        "CatBoost": cb.CatBoostRegressor(iterations=550, learning_rate=0.04, depth=6, l2_leaf_reg=3.5, random_state=42, verbose=0),
-        "XGBoost": xgb.XGBRegressor(n_estimators=450, learning_rate=0.035, max_depth=5, subsample=0.8, colsample_bytree=0.75, reg_alpha=1.0, reg_lambda=2.0, tree_method="hist", random_state=42)
+        "HistGradientBoosting": HistGradientBoostingRegressor(max_iter=300, learning_rate=0.035, max_leaf_nodes=31, l2_regularization=1.5, random_state=42),
+        "LightGBM": lgb.LGBMRegressor(n_estimators=500, learning_rate=0.03, num_leaves=26, subsample=0.8, colsample_bytree=0.75, min_child_samples=20, reg_alpha=1.2, reg_lambda=1.5, random_state=42, verbose=-1),
+        "CatBoost": cb.CatBoostRegressor(iterations=650, learning_rate=0.035, depth=6, l2_leaf_reg=4.0, random_state=42, verbose=0),
+        "XGBoost": xgb.XGBRegressor(n_estimators=500, learning_rate=0.03, max_depth=5, subsample=0.8, colsample_bytree=0.75, reg_alpha=1.0, reg_lambda=2.0, tree_method="hist", random_state=42)
     }
     return models
 
@@ -209,7 +209,7 @@ def train_and_evaluate_all_models(
     - Xây dựng mô hình Weighted Blend Ensemble từ 4 mô hình xuất sắc nhất.
     """
     features = numeric_cols + categorical_cols
-    features_with_time = [c for c in fit_df.columns if c in features or c in ["t_years", "date"]]
+    features_with_time = [c for c in fit_df.columns if c in features or c in ["t_years", "date", "store_id"]]
     X_train = fit_df[features_with_time]
     y_train = fit_df["revenue"].values
     X_val = val_df[features_with_time]
@@ -297,8 +297,8 @@ def train_and_evaluate_all_models(
             tet_str = f" | Tet RMSLE: {tet_rmsle:.4f}" if tet_rmsle is not None else ""
             print(f" done in {fit_time:.2f}s | Val RMSLE: {val_metrics['RMSLE']:.4f}{tet_str}")
 
-    # 3. Xây dựng Weighted Blend Ensemble từ 4 mô hình mạnh nhất: LightGBM, CatBoost, XGBoost, Ridge
-    ensemble_member_names = ["LightGBM", "CatBoost", "XGBoost", "Ridge (L2 Linear)"]
+    # 3. Xây dựng Weighted Blend Ensemble từ 4 mô hình xuất sắc nhất: CatBoost, LightGBM, XGBoost, Ridge
+    ensemble_member_names = ["CatBoost", "LightGBM", "XGBoost", "Ridge (L2 Linear)"]
     ensemble_models = {m: fitted_pipelines[m] for m in ensemble_member_names if m in fitted_pipelines}
     
     P_val_log = np.column_stack([np.log1p(np.maximum(0, val_preds_dict[m])) for m in ensemble_models.keys()])
@@ -356,7 +356,7 @@ def run_time_series_cv_benchmark(
     Baseline, Ridge, HistGradientBoosting, LightGBM, CatBoost, XGBoost.
     """
     features = numeric_cols + categorical_cols
-    features_with_time = [c for c in train_clean_df.columns if c in features or c in ["t_years", "date"]]
+    features_with_time = [c for c in train_clean_df.columns if c in features or c in ["t_years", "date", "store_id"]]
     cv = TimeSeriesExpandingCV()
     folds = list(cv.split(train_clean_df))
     
@@ -370,6 +370,9 @@ def run_time_series_cv_benchmark(
     }
     
     cv_records = []
+    ens_weights = {"CatBoost": 0.40, "LightGBM": 0.25, "XGBoost": 0.20, "Ridge": 0.15}
+    fold_preds_log = {m: [] for m in ens_weights.keys()}
+    fold_y_true = []
     
     for name, raw_model in models_to_test.items():
         fold_scores = []
@@ -378,6 +381,8 @@ def run_time_series_cv_benchmark(
             fold_va = train_clean_df.iloc[va_idx]
             
             y_va = fold_va["revenue"].values
+            if len(fold_y_true) < len(folds):
+                fold_y_true.append(y_va)
             
             if name == "Baseline (Weekday Median)":
                 pred_va = compute_weekday_median_baseline(fold_tr, fold_va)
@@ -385,6 +390,8 @@ def run_time_series_cv_benchmark(
                 pipeline = build_leakage_free_pipeline(clone(raw_model), numeric_cols, categorical_cols, use_trend_aware=True)
                 pipeline.fit(fold_tr[features_with_time], fold_tr["revenue"].values)
                 pred_va = pipeline.predict(fold_va[features_with_time])
+                if name in fold_preds_log:
+                    fold_preds_log[name].append(np.log1p(np.maximum(0.0, pred_va)))
                 
             score = rmsle(y_va, pred_va)
             fold_scores.append(score)
@@ -399,18 +406,13 @@ def run_time_series_cv_benchmark(
             "Std CV RMSLE": round(float(np.std(fold_scores)), 4)
         })
         
-    # Thêm dòng đánh giá Weighted Blend Ensemble
-    ens_weights = {"CatBoost": 0.40, "LightGBM": 0.25, "XGBoost": 0.20, "Ridge": 0.15}
+    # Đánh giá Weighted Blend Ensemble từ 4 mô hình GBDT SOTA (tổng hợp dự báo trên không gian logarit)
     ens_scores = []
-    for f_idx in range(4):
-        f_scores_weighted = sum(
-            cv_records[i][f"Fold {f_idx+1}" + (" (Tet Q1/25)" if f_idx==0 else " (Q2/25)" if f_idx==1 else " (Summer Q3/25)" if f_idx==2 else " (Q4/25)")] * w
-            for i, name in enumerate(models_to_test.keys())
-            if name in ens_weights
-            for m_key, w in ens_weights.items()
-            if m_key == name
-        )
-        ens_scores.append(round(f_scores_weighted, 4))
+    for f_idx in range(len(folds)):
+        blend_log = sum(ens_weights[m] * fold_preds_log[m][f_idx] for m in ens_weights)
+        p_ens = np.maximum(0.0, np.expm1(blend_log))
+        ens_score = rmsle(fold_y_true[f_idx], p_ens)
+        ens_scores.append(round(ens_score, 4))
         
     cv_records.append({
         "Model": "Weighted Blend Ensemble (SOTA)",
