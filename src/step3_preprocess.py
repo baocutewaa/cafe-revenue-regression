@@ -324,6 +324,13 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     res["is_holiday_work_drop"] = res["is_national_holiday"] * is_work
     res["is_holiday_retail_boost"] = res["is_national_holiday"] * is_retail
     
+    # Tương tác cận Tết (Pre-Tet) và lõi Tết (Tet Core) theo đặc thù mô hình quán
+    res["is_pre_tet_retail_boost"] = res["is_pre_tet_shopping"] * is_retail
+    res["is_pre_tet_work_drop"] = res["is_pre_tet_shopping"] * is_work
+    res["is_tet_core_mall"] = res["is_tet_core"] * is_mall
+    res["is_tet_core_street"] = res["is_tet_core"] * is_street
+    res["is_tet_core_res"] = res["is_tet_core"] * is_res
+    
     # --------------------------------------------------------------------------
     # 3. Nhóm Tĩnh & Vòng đời Cửa hàng (Store Static & Lifecycle)
     # --------------------------------------------------------------------------
@@ -390,6 +397,11 @@ class DeSeasonalizedStoreStats(BaseEstimator, TransformerMixin):
         y_log = np.log1p(np.clip(y, 0, None))
         df["y_log"] = y_log
         
+        # Tính doanh thu chuẩn hóa đã khử ramp-up (Unramped Log Revenue)
+        # Giúp các quán mới mở muộn (như S01, S45, S19) phản ánh đúng công suất thực khi bước sang 2026
+        log_ramp = df.get("log_ramp_up_factor", pd.Series(0.0, index=df.index))
+        df["y_unramped_log"] = y_log - log_ramp
+        
         self.global_log_mean_ = float(np.mean(y_log))
         
         # 1. Xác định các ngày bình thường để tính mức nền chuẩn
@@ -407,13 +419,21 @@ class DeSeasonalizedStoreStats(BaseEstimator, TransformerMixin):
         # Trung vị theo từng quán
         store_base = normal_df.groupby("store_id")["y_log"].median().to_dict()
         
-        # Trung vị theo (store_id, dow)
-        store_dow = df.groupby(["store_id", "dow"])["y_log"].median().to_dict()
+        # Trung vị theo (store_id, dow) tính trên y_unramped_log trên các ngày sạch (không promo & không Tết)
+        clean_days = df[(df["is_promo"] == 0) & (df["is_tet_core"] == 0)]
+        store_dow = clean_days.groupby(["store_id", "dow"])["y_unramped_log"].median().to_dict()
+        all_store_dow = df.groupby(["store_id", "dow"])["y_unramped_log"].median().to_dict()
+        for k, v in all_store_dow.items():
+            if k not in store_dow:
+                store_dow[k] = v
         self.store_dow_log_ = store_dow
         
-        # Trung vị theo (store_type, city, dow)
-        type_city_dow = df.groupby(["store_type", "city", "dow"])["y_log"].median().to_dict()
-        self.type_city_dow_log_ = type_city_dow
+        # Trung vị theo (store_type, city, dow) trên y_unramped_log
+        self.type_city_dow_log_ = clean_days.groupby(["store_type", "city", "dow"])["y_unramped_log"].median().to_dict()
+        all_type_city_dow = df.groupby(["store_type", "city", "dow"])["y_unramped_log"].median().to_dict()
+        for k, v in all_type_city_dow.items():
+            if k not in self.type_city_dow_log_:
+                self.type_city_dow_log_[k] = v
         
         # 2. Huấn luyện mô hình ước lượng công suất nền tảng (Store Capacity Prior)
         store_meta = df.drop_duplicates(subset=["store_id"])[
@@ -444,13 +464,12 @@ class DeSeasonalizedStoreStats(BaseEstimator, TransformerMixin):
             if hist_base is None:
                 s_df = df[df["store_id"] == sid]
                 if len(s_df) > 0:
-                    ramp_factors = s_df.get("ramp_up_factor", pd.Series(1.0, index=s_df.index))
-                    unramped_log = s_df["y_log"] - np.log(np.maximum(0.2, ramp_factors))
-                    non_promo = unramped_log[s_df["is_promo"] == 0]
-                    if len(non_promo) >= 3:
-                        hist_base = float(non_promo.median())
+                    unramped_s = s_df["y_unramped_log"]
+                    non_promo_s = unramped_s[s_df["is_promo"] == 0]
+                    if len(non_promo_s) >= 3:
+                        hist_base = float(non_promo_s.median())
                     else:
-                        hist_base = float(unramped_log.median())
+                        hist_base = float(unramped_s.median())
             
             # Tính prior từ mô hình vật lý
             prior_val = self.global_log_mean_

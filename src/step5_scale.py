@@ -77,7 +77,22 @@ class TrendAwareLogTargetWrapper(BaseEstimator, RegressorMixin):
         y_log = np.log1p(np.clip(y_arr, 0.0, None))
         
         if np.ptp(t) > 0.01:
-            self.slope_, self.intercept_ = np.polyfit(t, y_log, 1)
+            if isinstance(X, pd.DataFrame) and "store_id" in X.columns and X["store_id"].nunique() > 1:
+                # Within-Store Panel Fixed Effects (Store-demeaned OLS slope):
+                # Loại bỏ độ lệch cơ cấu (composition bias) từ việc mở các quán mới trong năm 2025.
+                # Chuẩn hóa khử trung bình theo quán cho CẢ y_log và t để đạt ước lượng OLS Within-Estimator kinh tế lượng chuẩn xác.
+                s_mean_y = pd.Series(y_log, index=X.index).groupby(X["store_id"]).transform("mean").values
+                s_mean_t = pd.Series(t, index=X.index).groupby(X["store_id"]).transform("mean").values
+                y_c = y_log - s_mean_y
+                t_c = t - s_mean_t
+                denom = np.sum(t_c ** 2)
+                if denom > 1e-6:
+                    self.slope_ = float(np.sum(t_c * y_c) / denom)
+                    self.intercept_ = float(np.mean(y_log) - self.slope_ * np.mean(t))
+                else:
+                    self.slope_, self.intercept_ = 0.0, float(np.mean(y_log))
+            else:
+                self.slope_, self.intercept_ = np.polyfit(t, y_log, 1)
         else:
             self.slope_, self.intercept_ = 0.0, float(np.mean(y_log))
             

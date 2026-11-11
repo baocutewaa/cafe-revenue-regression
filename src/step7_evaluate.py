@@ -462,7 +462,7 @@ def run_step7(data_dir: str = "data", plots_dir: str = "plots", verbose: bool = 
     fit_clean, val_clean = get_starter_holdout_split(train_final, split_date="2025-10-01")
     numeric_cols, categorical_cols, ignore_cols = get_feature_column_types(fit_clean)
     features = numeric_cols + categorical_cols
-    features_with_time = [c for c in fit_clean.columns if c in features or c in ["t_years", "date"]]
+    features_with_time = [c for c in fit_clean.columns if c in features or c in ["t_years", "date", "store_id"]]
     
     X_train = fit_clean[features_with_time]
     y_train = fit_clean["revenue"].values
@@ -471,7 +471,7 @@ def run_step7(data_dir: str = "data", plots_dir: str = "plots", verbose: bool = 
     
     # 2. Huấn luyện mô hình tối ưu Weighted Blend Ensemble
     candidate_models = get_candidate_models()
-    ensemble_candidates = ["LightGBM", "CatBoost", "XGBoost", "Ridge (L2 Linear)"]
+    ensemble_candidates = ["CatBoost", "LightGBM", "XGBoost", "Ridge (L2 Linear)"]
     fitted_pipes = {}
     val_preds_dict = {}
     
