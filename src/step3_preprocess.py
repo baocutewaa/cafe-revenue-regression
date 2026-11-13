@@ -365,6 +365,38 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     res["promo_x_weekend"] = res["is_promo"] * res["is_weekend"]
     res["is_promo_friday"] = res["is_promo"] * (res["dow"] == 4).astype(int)
     
+    # --------------------------------------------------------------------------
+    # 5. Nhóm Tương tác Chuyên sâu Bổ sung (Advanced Domain Interactions)
+    # --------------------------------------------------------------------------
+    is_uni = (res["store_type"] == "university").astype(int)
+    is_street = (res["store_type"] == "street").astype(int)
+    is_office = (res["store_type"] == "office").astype(int)
+    is_res = (res["store_type"] == "residential").astype(int)
+    
+    # Tương tác khuyến mãi theo loại quán và thứ trong tuần (Sinh viên hưởng ứng mạnh nhất +38%)
+    res["promo_x_uni"] = res["is_promo"] * is_uni
+    res["promo_x_mall"] = res["is_promo"] * is_mall
+    res["promo_x_street"] = res["is_promo"] * is_street
+    res["promo_x_dow"] = res["is_promo"] * res["dow"]
+    
+    # Đợt cao điểm mua sắm cận Tết (từ 23 Chạp đến 27 Tết: days_from_tet_clipped từ -7 đến -3)
+    d_tet = res["days_from_tet_clipped"]
+    res["is_pre_tet_mall_rush"] = (is_mall & (d_tet.between(-7, -3))).astype(int)
+    res["is_pre_tet_street_rush"] = (is_street & (d_tet.between(-7, -3))).astype(int)
+    
+    # Đáy trũng lõi Tết (-2 đến +2) cho mô hình đường phố và khu dân cư
+    res["is_tet_core_slump"] = ((is_street | is_res) & (d_tet.between(-2, 2))).astype(int)
+    
+    # Phục hồi sau Tết (+3 đến +9) cho khối văn phòng (chậm) và mall (bật tăng sớm từ Mùng 2)
+    res["is_post_tet_office_ramp"] = (is_office & (d_tet.between(3, 9))).astype(int)
+    res["is_post_tet_mall_bounce"] = (is_mall & (d_tet.between(2, 6))).astype(int)
+    
+    # Độ lệch trơn tính từ tâm Tết (Gaussian decay centered at Tet)
+    res["tet_dist_smooth"] = np.exp(-0.5 * (d_tet / 5.0) ** 2)
+    
+    # Mưa lớn tác động lên quán có không gian ngoài trời
+    res["rain_heavy_outdoor"] = res["is_heavy_rain"] * (is_street | is_res | is_uni).astype(int)
+    
     return res
 
 

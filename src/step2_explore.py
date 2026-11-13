@@ -340,23 +340,23 @@ def generate_eda_plots(train_merged: pd.DataFrame, weather_df: pd.DataFrame, out
     # Raw revenue (có ngoại lai gốc)
     raw_rev = train_merged["revenue"].dropna()
     axes[0, 0].hist(np.clip(raw_rev, 0, 100), bins=50, color="#3498db", edgecolor="black", alpha=0.7)
-    axes[0, 0].set_title("Phân phối Doanh thu Gốc (Cắt ngưỡng 0 - 100 tr.VNĐ)", fontsize=12, fontweight="bold")
-    axes[0, 0].set_xlabel("Doanh thu (triệu VNĐ)")
-    axes[0, 0].set_ylabel("Số lượng ngày")
+    axes[0, 0].set_title("Raw Revenue Distribution (Clipped at 0 - 100M VND)", fontsize=12, fontweight="bold")
+    axes[0, 0].set_xlabel("Revenue (Million VND)")
+    axes[0, 0].set_ylabel("Count (Days)")
     
     sns.boxplot(x=np.clip(raw_rev, 0, 100), ax=axes[0, 1], color="#e74c3c")
-    axes[0, 1].set_title("Boxplot Doanh thu Gốc (Xuất hiện nhiều ngoại lai cực đoan)", fontsize=12, fontweight="bold")
-    axes[0, 1].set_xlabel("Doanh thu (triệu VNĐ)")
+    axes[0, 1].set_title("Raw Revenue Boxplot (Severe Extreme Outliers)", fontsize=12, fontweight="bold")
+    axes[0, 1].set_xlabel("Revenue (Million VND)")
     
     # Log1p revenue (đã hiệu chỉnh lỗi 1000x để minh họa)
     log_rev = np.log1p(df["revenue"])
     axes[1, 0].hist(log_rev, bins=50, color="#2ecc71", edgecolor="black", alpha=0.7)
-    axes[1, 0].set_title("Phân phối sau Biến đổi ln(1 + Revenue) (Gần phân phối chuẩn)", fontsize=12, fontweight="bold")
+    axes[1, 0].set_title("Distribution after ln(1 + Revenue) Transformation (Near Normal)", fontsize=12, fontweight="bold")
     axes[1, 0].set_xlabel("ln(1 + Revenue)")
-    axes[1, 0].set_ylabel("Số lượng ngày")
+    axes[1, 0].set_ylabel("Count (Days)")
     
     sns.boxplot(x=log_rev, ax=axes[1, 1], color="#f39c12")
-    axes[1, 1].set_title("Boxplot sau Biến đổi ln(1 + Revenue)", fontsize=12, fontweight="bold")
+    axes[1, 1].set_title("Boxplot after ln(1 + Revenue) Transformation", fontsize=12, fontweight="bold")
     axes[1, 1].set_xlabel("ln(1 + Revenue)")
     
     plt.tight_layout()
@@ -371,12 +371,12 @@ def generate_eda_plots(train_merged: pd.DataFrame, weather_df: pd.DataFrame, out
     fig, ax = plt.subplots(figsize=(14, 5))
     for city, col in [("Ha Noi", "#2980b9"), ("Ho Chi Minh", "#e67e22")]:
         city_w = weather_df[weather_df["city"] == city].sort_values("date")
-        ax.plot(city_w["date"], city_w["temp_c"], label=city, color=col, alpha=0.8, linewidth=1.2)
+        ax.plot(city_w["date"], city_w["temp_c"], label=f"Temperature: {city}", color=col, alpha=0.8, linewidth=1.2)
         
     # Đánh dấu vùng Fahrenheit
     f_rows = weather_df[weather_df["temp_c"] > 45]
     if len(f_rows) > 0:
-        ax.axhspan(45, 95, color="red", alpha=0.15, label="Vùng lỗi ghi nhầm độ °F (> 45°C)")
+        ax.axhspan(45, 95, color="red", alpha=0.15, label="Fahrenheit Input Error Zone (°F > 45°C)")
         ax.annotate(
             f"Lỗi độ °F tại TP.HCM (Tháng 6/2025): {len(f_rows)} ngày\\nNhiệt độ vọt lên {f_rows['temp_c'].min():.1f} - {f_rows['temp_c'].max():.1f}°F",
             xy=(pd.Timestamp("2025-06-20"), 85),
@@ -386,9 +386,9 @@ def generate_eda_plots(train_merged: pd.DataFrame, weather_df: pd.DataFrame, out
             bbox=dict(boxstyle="round,pad=0.5", fc="white", ec="red", lw=1.5)
         )
         
-    ax.set_title("Chuỗi thời gian Nhiệt độ temp_c tại Hà Nội và TP.HCM (2024 - 2026)", fontsize=13, fontweight="bold")
-    ax.set_xlabel("Ngày")
-    ax.set_ylabel("Nhiệt độ ghi nhận trong file (°C)")
+    ax.set_title("Temperature (temp_c) Time Series in Hanoi and HCMC (2024 - 2026)", fontsize=13, fontweight="bold")
+    ax.set_xlabel("Date")
+    ax.set_ylabel("Recorded Temperature in Dataset (°C)")
     ax.legend(loc="upper left")
     plt.tight_layout()
     p2 = os.path.join(output_dir, "eda_2_weather_temperature_fahrenheit.png")
@@ -400,15 +400,15 @@ def generate_eda_plots(train_merged: pd.DataFrame, weather_df: pd.DataFrame, out
     # BIỂU ĐỒ 3: DoW × Store Type Medians (Sự đảo chiều ngày thường vs cuối tuần)
     # --------------------------------------------------------------------------
     dow_matrix = df.groupby(["store_type_clean", "dow"])["revenue"].median().unstack()
-    dow_matrix.columns = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ Nhật"]
+    dow_matrix.columns = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
     
     fig, ax = plt.subplots(figsize=(12, 6))
     dow_matrix.T.plot(kind="bar", ax=ax, width=0.8, colormap="tab10")
-    ax.set_title("Sự tương phản Doanh thu theo Thứ trong tuần × Loại hình cửa hàng (dayofweek × store_type)", fontsize=13, fontweight="bold")
-    ax.set_xlabel("Thứ trong tuần")
-    ax.set_ylabel("Doanh thu trung vị (triệu VNĐ)")
+    ax.set_title("Median Revenue by Day of Week × Store Type (dayofweek × store_type)", fontsize=13, fontweight="bold")
+    ax.set_xlabel("Day of Week")
+    ax.set_ylabel("Median Revenue (Million VND)")
     ax.set_xticklabels(ax.get_xticklabels(), rotation=0)
-    ax.legend(title="Loại cửa hàng", bbox_to_anchor=(1.02, 1), loc="upper left")
+    ax.legend(title="Store Type", bbox_to_anchor=(1.02, 1), loc="upper left")
     plt.tight_layout()
     p3 = os.path.join(output_dir, "eda_3_dow_store_type_interaction.png")
     fig.savefig(p3, dpi=150)
@@ -428,15 +428,15 @@ def generate_eda_plots(train_merged: pd.DataFrame, weather_df: pd.DataFrame, out
     
     fig, ax = plt.subplots(figsize=(14, 6))
     for col in tet_agg.columns:
-        ax.plot(tet_agg.index, tet_agg[col], marker="o", markersize=4, label=col, linewidth=1.8)
+        ax.plot(tet_agg.index, tet_agg[col], marker="o", markersize=4, label=f"{col.capitalize()} Store", linewidth=1.8)
         
-    ax.axvline(0, color="red", linestyle="--", linewidth=1.5, label="Mùng 1 Tết (Δ=0)")
-    ax.axvspan(-2, 2, color="gray", alpha=0.15, label="Vùng Tết cốt lõi (29 Tết - Mùng 2)")
+    ax.axvline(0, color="red", linestyle="--", linewidth=1.5, label="Tet Day 1 (Δ=0)")
+    ax.axvspan(-2, 2, color="gray", alpha=0.15, label="Core 5-Day Tet Window (Tet Eve - Day 2)")
     ax.axhline(1.0, color="black", linestyle=":", alpha=0.7)
     
-    ax.set_title("Quỹ đạo Doanh thu quanh Tết Nguyên Đán theo Loại hình cửa hàng (Δ_Tết từ -18 đến +18 ngày)", fontsize=13, fontweight="bold")
-    ax.set_xlabel("Số ngày so với Mùng 1 Tết (Δ_Tết = date - Mùng 1 Tết)")
-    ax.set_ylabel("Tỷ số so với trung vị thứ (sw_ratio)")
+    ax.set_title("Revenue Trajectory Around Lunar New Year by Store Type (Δ_Tet from -18 to +18 days)", fontsize=13, fontweight="bold")
+    ax.set_xlabel("Days Relative to Tet Day 1 (Δ_Tet = date - Tet Day 1)")
+    ax.set_ylabel("Revenue / Stable Baseline Ratio (sw_ratio)")
     ax.legend(bbox_to_anchor=(1.02, 1), loc="upper left")
     plt.tight_layout()
     p4 = os.path.join(output_dir, "eda_4_tet_trajectory_by_store_type.png")
@@ -451,12 +451,12 @@ def generate_eda_plots(train_merged: pd.DataFrame, weather_df: pd.DataFrame, out
     age_curve = age_df.groupby("days_since_open")["sw_ratio"].median()
     
     fig, ax = plt.subplots(figsize=(12, 5))
-    ax.plot(age_curve.index, age_curve.values, color="#8e44ad", linewidth=2.0, marker=".", label="Trung vị sw_ratio thực tế")
-    ax.axhline(1.0, color="gray", linestyle="--", label="Mức bão hòa ổn định (1.0x)")
+    ax.plot(age_curve.index, age_curve.values, color="#8e44ad", linewidth=2.0, marker=".", label="Median sw_ratio by Store Age")
+    ax.axhline(1.0, color="gray", linestyle="--", label="Stable Maturity Level (1.0x)")
     
     # Chú thích đỉnh khai trương
     ax.annotate(
-        "Đỉnh khai trương 3 ngày đầu: ~1.65x - 1.93x",
+        "Grand opening peak (first 3 days): ~1.65x - 1.93x",
         xy=(1, age_curve.loc[1] if 1 in age_curve else 1.7),
         xytext=(10, 1.8),
         arrowprops=dict(facecolor="darkviolet", shrink=0.05, width=1.5),
@@ -464,16 +464,16 @@ def generate_eda_plots(train_merged: pd.DataFrame, weather_df: pd.DataFrame, out
     )
     # Chú thích trũng tích lũy
     ax.annotate(
-        "Đáy chạy đà tuần đầu: ~0.61x",
+        "Ramp-up dip (first week): ~0.61x",
         xy=(5, age_curve.loc[5] if 5 in age_curve else 0.61),
         xytext=(15, 0.45),
         arrowprops=dict(facecolor="crimson", shrink=0.05, width=1.5),
         fontsize=10, fontweight="bold", color="crimson"
     )
     
-    ax.set_title("Đường cong Trưởng thành của Quán mới (Store Lifecycle Curve: 0 - 90 ngày tuổi)", fontsize=13, fontweight="bold")
-    ax.set_xlabel("Số ngày kể từ ngày khai trương (days_since_open)")
-    ax.set_ylabel("Tỷ số Doanh thu / Trung vị ổn định (sw_ratio)")
+    ax.set_title("New Store Lifecycle Curve: 0 - 90 Days Since Opening", fontsize=13, fontweight="bold")
+    ax.set_xlabel("Days Since Opening (days_since_open)")
+    ax.set_ylabel("Revenue / Stable Baseline Ratio (sw_ratio)")
     ax.set_ylim(0.2, 2.2)
     ax.legend(loc="upper right")
     plt.tight_layout()
@@ -492,7 +492,7 @@ def generate_eda_plots(train_merged: pd.DataFrame, weather_df: pd.DataFrame, out
     
     fig, ax = plt.subplots(figsize=(10, 8))
     sns.heatmap(corr_df, annot=True, fmt=".2f", cmap="coolwarm", cbar=True, square=True, ax=ax, linewidths=0.5)
-    ax.set_title("Ma trận Tương quan Tuyến tính Pearson giữa log1p(revenue) và các biến chính", fontsize=13, fontweight="bold")
+    ax.set_title("Pearson Linear Correlation Matrix between log1p(revenue) and Features", fontsize=13, fontweight="bold")
     plt.tight_layout()
     p6 = os.path.join(output_dir, "eda_6_feature_correlation_heatmap.png")
     fig.savefig(p6, dpi=150)
