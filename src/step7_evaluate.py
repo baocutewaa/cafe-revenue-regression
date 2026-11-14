@@ -272,10 +272,10 @@ def generate_evaluation_plots(
     sns.scatterplot(
         x=y_true, y=y_pred,
         alpha=0.4, color="#1f77b4", edgecolor=None, s=25, ax=ax,
-        label="Dự báo thực tế (Val 3,832 mẫu)"
+        label="Predictions (Val 3,832 samples)"
     )
     max_val = max(np.max(y_true), np.max(y_pred)) * 1.05
-    ax.plot([0, max_val], [0, max_val], color="#d62728", linestyle="--", linewidth=2, label="Đường chuẩn lý tưởng (y = x)")
+    ax.plot([0, max_val], [0, max_val], color="#d62728", linestyle="--", linewidth=2, label="Ideal Reference Line (y = x)")
     
     ens_rmsle = rmsle(y_true, y_pred)
     mae_val = np.mean(np.abs(y_pred - y_true))
@@ -292,9 +292,9 @@ def generate_evaluation_plots(
         fontsize=11, verticalalignment="top",
         bbox=dict(boxstyle="round,pad=0.5", facecolor="white", edgecolor="#1f77b4", alpha=0.9)
     )
-    ax.set_title("Biểu đồ 1: Thực tế vs Dự báo Doanh thu (Holdout Val Oct-Dec 2025)", fontsize=13, fontweight="bold", pad=12)
-    ax.set_xlabel("Doanh thu Thực tế (triệu VNĐ/ngày)", fontsize=11)
-    ax.set_ylabel("Doanh thu Dự báo (triệu VNĐ/ngày)", fontsize=11)
+    ax.set_title("Figure 1: Actual vs Predicted Revenue (Holdout Val Oct-Dec 2025)", fontsize=13, fontweight="bold", pad=12)
+    ax.set_xlabel("Actual Revenue (Million VND/day)", fontsize=11)
+    ax.set_ylabel("Predicted Revenue (Million VND/day)", fontsize=11)
     ax.set_xlim(0, max_val)
     ax.set_ylim(0, max_val)
     ax.legend(loc="lower right")
@@ -315,12 +315,12 @@ def generate_evaluation_plots(
     mu, std = np.mean(log_res), np.std(log_res)
     x_norm = np.linspace(log_res.min(), log_res.max(), 100)
     p_norm = stats.norm.pdf(x_norm, mu, std)
-    ax.plot(x_norm, p_norm, color="#d62728", linestyle="--", linewidth=2, label=f"Phân phối Chuẩn (μ={mu:.4f}, σ={std:.4f})")
+    ax.plot(x_norm, p_norm, color="#d62728", linestyle="--", linewidth=2, label=f"Gaussian Fit (μ={mu:.4f}, σ={std:.4f})")
     
     ax.axvline(0, color="black", linestyle=":", linewidth=1.5)
-    ax.set_title("Biểu đồ 2: Phân phối Phần dư Logarit ln(1+ŷ) - ln(1+y)", fontsize=13, fontweight="bold", pad=12)
-    ax.set_xlabel("Sai số Logarit (Phần dư)", fontsize=11)
-    ax.set_ylabel("Mật độ xác suất (Density)", fontsize=11)
+    ax.set_title("Figure 2: Log Residuals Distribution ln(1+ŷ) - ln(1+y)", fontsize=13, fontweight="bold", pad=12)
+    ax.set_xlabel("Log Residual", fontsize=11)
+    ax.set_ylabel("Probability Density", fontsize=11)
     ax.legend(loc="upper right")
     plt.tight_layout()
     p2_path = os.path.join(output_dir, "eval_2_residual_distribution.png")
@@ -343,8 +343,8 @@ def generate_evaluation_plots(
         imp = st_df.loc[idx, "Improvement (%)"]
         ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.005, f"-{imp:.1f}%", ha='center', va='bottom', fontsize=9, fontweight='bold', color="#1f77b4")
         
-    ax.set_title("Biểu đồ 3: Đối chiếu RMSLE theo từng Loại Vị trí Quán (Store Type)", fontsize=13, fontweight="bold", pad=12)
-    ax.set_ylabel("RMSLE (Càng thấp càng tốt)", fontsize=11)
+    ax.set_title("Figure 3: RMSLE Comparison by Store Type", fontsize=13, fontweight="bold", pad=12)
+    ax.set_ylabel("RMSLE (Lower is better)", fontsize=11)
     ax.set_xticks(x)
     ax.set_xticklabels([f"{st.upper()}\n(N={n})" for st, n in zip(st_df["Store Type"], st_df["Sample Count"])], fontsize=10)
     ax.set_ylim(0, max(st_df["Baseline RMSLE"].max(), st_df["Ensemble RMSLE"].max()) * 1.2)
@@ -367,11 +367,11 @@ def generate_evaluation_plots(
     early_stores = df_diag[df_diag["days_since_open"] <= 60].copy()
     if len(early_stores) > 0:
         agg_ramp = early_stores.groupby("days_since_open")[["actual", "pred"]].mean().reset_index()
-        ax.plot(agg_ramp["days_since_open"], agg_ramp["actual"], marker="o", linewidth=2, color="#1f77b4", label="Doanh thu Thực tế Trung bình")
-        ax.plot(agg_ramp["days_since_open"], agg_ramp["pred"], marker="s", linestyle="--", linewidth=2, color="#d62728", label="Dự báo của Ensemble")
-        ax.set_title("Biểu đồ 4: Chẩn đoán Đường cong Chạy đà 60 Ngày đầu Mở quán (Ramp-Up Curve)", fontsize=13, fontweight="bold", pad=12)
-        ax.set_xlabel("Số ngày kể từ khi khai trương (days_since_open)", fontsize=11)
-        ax.set_ylabel("Doanh thu Trung bình (triệu VNĐ/ngày)", fontsize=11)
+        ax.plot(agg_ramp["days_since_open"], agg_ramp["actual"], marker="o", linewidth=2, color="#1f77b4", label="Actual Mean Revenue")
+        ax.plot(agg_ramp["days_since_open"], agg_ramp["pred"], marker="s", linestyle="--", linewidth=2, color="#d62728", label="Ensemble Prediction")
+        ax.set_title("Figure 4: First 60 Days Ramp-Up Curve Diagnostics", fontsize=13, fontweight="bold", pad=12)
+        ax.set_xlabel("Days Since Opening (days_since_open)", fontsize=11)
+        ax.set_ylabel("Mean Revenue (Million VND/day)", fontsize=11)
         ax.legend(loc="best")
     else:
         # Nếu tập val không có quán dưới 60 ngày, vẽ theo nhóm tuổi quán
@@ -379,11 +379,11 @@ def generate_evaluation_plots(
         labels = ["<3 tháng", "3-6 tháng", "6-12 tháng", ">1 năm"]
         df_diag["age_group"] = pd.cut(df_diag["days_since_open"], bins=bins, labels=labels)
         age_agg = df_diag.groupby("age_group")[["actual", "pred"]].mean().reset_index()
-        ax.bar(np.arange(len(age_agg)) - 0.2, age_agg["actual"], 0.4, label="Thực tế", color="#1f77b4")
-        ax.bar(np.arange(len(age_agg)) + 0.2, age_agg["pred"], 0.4, label="Dự báo Ensemble", color="#d62728")
+        ax.bar(np.arange(len(age_agg)) - 0.2, age_agg["actual"], 0.4, label="Actual", color="#1f77b4")
+        ax.bar(np.arange(len(age_agg)) + 0.2, age_agg["pred"], 0.4, label="Ensemble Pred", color="#d62728")
         ax.set_xticks(np.arange(len(age_agg)))
         ax.set_xticklabels(age_agg["age_group"])
-        ax.set_title("Biểu đồ 4: Chẩn đoán Doanh thu theo Tuổi Cửa hàng", fontsize=13, fontweight="bold", pad=12)
+        ax.set_title("Figure 4: Revenue Diagnostics by Store Age", fontsize=13, fontweight="bold", pad=12)
         ax.legend()
         
     plt.tight_layout()
@@ -403,8 +403,8 @@ def generate_evaluation_plots(
         w = bar.get_width()
         ax.text(w + 0.2, bar.get_y() + bar.get_height()/2, f"{w:.1f}%", va='center', fontsize=9, fontweight='bold', color="#2b3e50")
         
-    ax.set_title("Biểu đồ 5: Top 15 Đặc trưng Quan trọng nhất Mô hình Gradient Boosting (Gain %)", fontsize=13, fontweight="bold", pad=12)
-    ax.set_xlabel("Tỷ lệ Đóng góp Quan trọng (%)", fontsize=11)
+    ax.set_title("Figure 5: Top 15 Most Important Features in Gradient Boosting (Gain %)", fontsize=13, fontweight="bold", pad=12)
+    ax.set_xlabel("Relative Importance Contribution (%)", fontsize=11)
     ax.set_xlim(0, top_fi["relative_importance"].max() * 1.15)
     plt.tight_layout()
     p5_path = os.path.join(output_dir, "eval_5_feature_importance_top20.png")
@@ -427,7 +427,7 @@ def generate_evaluation_plots(
         ax.text(i, h - 0.018, f"{h:.4f}", ha='center', fontsize=9, fontweight='bold', color="#1f77b4")
         ax.text(i, t + 0.012, f"{t:.4f}", ha='center', fontsize=9, fontweight='bold', color="#d62728")
         
-    ax.set_title("Biểu đồ 6: Lộ trình Giảm thiểu RMSLE qua từng Bước Cải tiến (Ablation Progression)", fontsize=13, fontweight="bold", pad=12)
+    ax.set_title("Figure 6: RMSLE Reduction Progression Across Ablation Steps", fontsize=13, fontweight="bold", pad=12)
     ax.set_ylabel("RMSLE (Càng thấp càng chính xác)", fontsize=11)
     ax.set_xticks(range(len(ablation_df)))
     ax.set_xticklabels([f"S{i}\n{ablation_df.loc[i, 'Step'].split(':')[0][:12]}" for i in range(len(ablation_df))], fontsize=9)

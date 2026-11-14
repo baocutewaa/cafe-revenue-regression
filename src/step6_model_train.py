@@ -151,15 +151,15 @@ def get_candidate_models() -> Dict[str, Any]:
     """
     models = {
         "Dummy (Median)": DummyRegressor(strategy="median"),
-        "Ridge (L2 Linear)": Ridge(alpha=5.0, random_state=42),
+        "Ridge (L2 Linear)": Ridge(alpha=3.0, random_state=42),
         "DecisionTree": DecisionTreeRegressor(max_depth=8, min_samples_leaf=15, random_state=42),
         "KNeighbors (k=31)": KNeighborsRegressor(n_neighbors=31, weights="distance"),
         "SVR (RBF Kernel)": SVR(kernel="rbf", C=2.0, epsilon=0.02, max_iter=2500),
         "MLP (64, 32)": MLPRegressor(hidden_layer_sizes=(64, 32), max_iter=200, random_state=42, early_stopping=True),
-        "HistGradientBoosting": HistGradientBoostingRegressor(max_iter=300, learning_rate=0.035, max_leaf_nodes=31, l2_regularization=1.5, random_state=42),
-        "LightGBM": lgb.LGBMRegressor(n_estimators=500, learning_rate=0.03, num_leaves=26, subsample=0.8, colsample_bytree=0.75, min_child_samples=20, reg_alpha=1.2, reg_lambda=1.5, random_state=42, verbose=-1),
-        "CatBoost": cb.CatBoostRegressor(iterations=650, learning_rate=0.035, depth=6, l2_leaf_reg=4.0, random_state=42, verbose=0),
-        "XGBoost": xgb.XGBRegressor(n_estimators=500, learning_rate=0.03, max_depth=5, subsample=0.8, colsample_bytree=0.75, reg_alpha=1.0, reg_lambda=2.0, tree_method="hist", random_state=42)
+        "HistGradientBoosting": HistGradientBoostingRegressor(max_iter=350, learning_rate=0.03, max_leaf_nodes=31, l2_regularization=1.5, random_state=42),
+        "LightGBM": lgb.LGBMRegressor(n_estimators=550, learning_rate=0.028, num_leaves=28, subsample=0.8, colsample_bytree=0.7, min_child_samples=20, reg_alpha=1.0, reg_lambda=1.5, random_state=42, verbose=-1),
+        "CatBoost": cb.CatBoostRegressor(iterations=750, learning_rate=0.03, depth=6, l2_leaf_reg=4.5, random_state=42, verbose=0),
+        "XGBoost": xgb.XGBRegressor(n_estimators=550, learning_rate=0.028, max_depth=5, subsample=0.8, colsample_bytree=0.7, reg_alpha=0.8, reg_lambda=2.0, tree_method="hist", random_state=42)
     }
     return models
 
@@ -255,7 +255,9 @@ def train_and_evaluate_all_models(
             print(f"--> Training {name:25s}...", end="", flush=True)
             
         t0 = time.time()
-        pipeline = build_leakage_free_pipeline(clone(raw_model), numeric_cols, categorical_cols, use_trend_aware=True)
+        use_cats = categorical_cols + ["store_id"] if any(gb in name for gb in ["CatBoost", "LightGBM", "XGBoost", "HistGradient"]) and "store_id" in X_train.columns and "store_id" not in categorical_cols else categorical_cols
+        use_nums = [c for c in numeric_cols if c != "store_id"]
+        pipeline = build_leakage_free_pipeline(clone(raw_model), use_nums, use_cats, use_trend_aware=True)
         pipeline.fit(X_train, y_train)
         fit_time = round(time.time() - t0, 2)
         fitted_pipelines[name] = pipeline
@@ -270,7 +272,7 @@ def train_and_evaluate_all_models(
         # Đánh giá trên Tet nếu có
         tet_rmsle = None
         if has_f1:
-            pipe_f1 = build_leakage_free_pipeline(clone(raw_model), numeric_cols, categorical_cols, use_trend_aware=True)
+            pipe_f1 = build_leakage_free_pipeline(clone(raw_model), use_nums, use_cats, use_trend_aware=True)
             pipe_f1.fit(X_f1_train, y_f1_train)
             pred_f1 = pipe_f1.predict(X_f1_val)
             tet_rmsle = rmsle(y_f1_val, pred_f1)
@@ -308,7 +310,9 @@ def train_and_evaluate_all_models(
     if has_f1:
         f1_preds_log = []
         for m in ensemble_models.keys():
-            pipe_f1 = build_leakage_free_pipeline(clone(candidate_models[m]), numeric_cols, categorical_cols, use_trend_aware=True)
+            use_cats_m = categorical_cols + ["store_id"] if any(gb in m for gb in ["CatBoost", "LightGBM", "XGBoost", "HistGradient"]) and "store_id" in X_f1_train.columns and "store_id" not in categorical_cols else categorical_cols
+            use_nums_m = [c for c in numeric_cols if c != "store_id"]
+            pipe_f1 = build_leakage_free_pipeline(clone(candidate_models[m]), use_nums_m, use_cats_m, use_trend_aware=True)
             pipe_f1.fit(X_f1_train, y_f1_train)
             f1_preds_log.append(np.log1p(np.maximum(0, pipe_f1.predict(X_f1_val))))
         P_f1_log = np.column_stack(f1_preds_log)
@@ -362,15 +366,15 @@ def run_time_series_cv_benchmark(
     
     models_to_test = {
         "Baseline (Weekday Median)": None,
-        "Ridge": Ridge(alpha=1.0, random_state=42),
-        "HistGradientBoosting": HistGradientBoostingRegressor(max_iter=250, learning_rate=0.05, max_leaf_nodes=31, random_state=42),
-        "LightGBM": lgb.LGBMRegressor(n_estimators=450, learning_rate=0.035, num_leaves=28, subsample=0.8, colsample_bytree=0.75, min_child_samples=20, reg_alpha=1.2, reg_lambda=1.2, random_state=42, verbose=-1),
-        "CatBoost": cb.CatBoostRegressor(iterations=550, learning_rate=0.04, depth=6, l2_leaf_reg=3.5, random_state=42, verbose=0),
-        "XGBoost": xgb.XGBRegressor(n_estimators=450, learning_rate=0.035, max_depth=5, subsample=0.8, colsample_bytree=0.75, reg_alpha=1.0, reg_lambda=2.0, tree_method="hist", random_state=42)
+        "Ridge": Ridge(alpha=3.0, random_state=42),
+        "HistGradientBoosting": HistGradientBoostingRegressor(max_iter=350, learning_rate=0.03, max_leaf_nodes=31, l2_regularization=1.5, random_state=42),
+        "LightGBM": lgb.LGBMRegressor(n_estimators=550, learning_rate=0.028, num_leaves=28, subsample=0.8, colsample_bytree=0.7, min_child_samples=20, reg_alpha=1.0, reg_lambda=1.5, random_state=42, verbose=-1),
+        "CatBoost": cb.CatBoostRegressor(iterations=750, learning_rate=0.03, depth=6, l2_leaf_reg=4.5, random_state=42, verbose=0),
+        "XGBoost": xgb.XGBRegressor(n_estimators=550, learning_rate=0.028, max_depth=5, subsample=0.8, colsample_bytree=0.7, reg_alpha=0.8, reg_lambda=2.0, tree_method="hist", random_state=42)
     }
     
     cv_records = []
-    ens_weights = {"CatBoost": 0.40, "LightGBM": 0.25, "XGBoost": 0.20, "Ridge": 0.15}
+    ens_weights = {"CatBoost": 0.60, "Ridge": 0.20, "LightGBM": 0.10, "XGBoost": 0.10}
     fold_preds_log = {m: [] for m in ens_weights.keys()}
     fold_y_true = []
     
@@ -387,7 +391,9 @@ def run_time_series_cv_benchmark(
             if name == "Baseline (Weekday Median)":
                 pred_va = compute_weekday_median_baseline(fold_tr, fold_va)
             else:
-                pipeline = build_leakage_free_pipeline(clone(raw_model), numeric_cols, categorical_cols, use_trend_aware=True)
+                use_cats = categorical_cols + ["store_id"] if any(gb in name for gb in ["CatBoost", "LightGBM", "XGBoost", "HistGradient"]) and "store_id" in train_clean_df.columns and "store_id" not in categorical_cols else categorical_cols
+                use_nums = [c for c in numeric_cols if c != "store_id"]
+                pipeline = build_leakage_free_pipeline(clone(raw_model), use_nums, use_cats, use_trend_aware=True)
                 pipeline.fit(fold_tr[features_with_time], fold_tr["revenue"].values)
                 pred_va = pipeline.predict(fold_va[features_with_time])
                 if name in fold_preds_log:
