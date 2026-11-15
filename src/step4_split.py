@@ -43,41 +43,80 @@ def get_expanding_window_folds() -> List[Dict[str, Any]]:
     return [
         {
             "fold_id": 1,
-            "fold_name": "Fold 1 (Seasonal Mirror của Test — Quý 1/2025)",
+            "fold_name": "Fold 1 (Seasonal Mirror — Q1/2025)",
             "train_start": "2024-01-01",
             "train_end": "2024-12-31",
             "val_start": "2025-01-01",
             "val_end": "2025-03-31",
-            "description": "Phản chiếu hoàn hảo cấu trúc test.csv Quý 1/2026: Chứa trọn vẹn Tết Ất Tỵ 2025 (Mùng 1: 29/01), Valentine 14/02 và 08/03."
+            "description": "Perfect mirror of test.csv Q1/2026 structure: Contains full Lunar New Year 2025, Valentine, and Mar 8."
         },
         {
             "fold_id": 2,
-            "fold_name": "Fold 2 (Quý 2/2025 — Đầu mùa mưa & Lễ lớn)",
+            "fold_name": "Fold 2 (Rainy Season — Q2/2025)",
             "train_start": "2024-01-01",
             "train_end": "2025-03-31",
             "val_start": "2025-04-01",
             "val_end": "2025-06-30",
-            "description": "Kiểm tra chuỗi ngày nghỉ Giỗ Tổ, 30/04 - 01/05 và giai đoạn bắt đầu mùa mưa tại TP.HCM."
+            "description": "Tests Hung Kings' holiday, Apr 30 - May 1, and the start of rainy season in HCMC."
         },
         {
             "fold_id": 3,
-            "fold_name": "Fold 3 (Quý 3/2025 — Nghỉ hè Sinh viên & Quốc khánh)",
+            "fold_name": "Fold 3 (Summer Vacation — Q3/2025)",
             "train_start": "2024-01-01",
             "train_end": "2025-06-30",
             "val_start": "2025-07-01",
             "val_end": "2025-09-30",
-            "description": "Kiểm tra hiện tượng sụt giảm -44% của khối đại học trong tháng 7-8 và dịp lễ Quốc khánh 02/09."
+            "description": "Tests university summer break drop in July-August and National Day holiday."
         },
         {
             "fold_id": 4,
-            "fold_name": "Fold 4 (Quý 4/2025 — Trùng với Split 1)",
+            "fold_name": "Fold 4 (Year-End Peak — Q4/2025)",
             "train_start": "2024-01-01",
             "train_end": "2025-09-30",
             "val_start": "2025-10-01",
             "val_end": "2025-12-31",
-            "description": "Kiểm tra cao điểm cuối năm, lễ 20/10, 20/11, Giáng sinh và dự báo các quán mới mở S19, S01, S45."
+            "description": "Tests year-end holidays, Christmas, and cold-start for new stores S19, S01, S45."
         }
     ]
+
+
+def plot_cv_timeline(output_path: str = "plots/time_series_cv_timeline.png") -> str:
+    """
+    Trực quan hóa sơ đồ 4-Fold Expanding Window Time-Series Cross-Validation hoàn toàn bằng tiếng Anh.
+    """
+    import matplotlib.pyplot as plt
+    folds_config = get_expanding_window_folds()
+    fig, ax = plt.subplots(figsize=(14, 5))
+    fold_names = [f["fold_name"].split(" — ")[0] for f in folds_config]
+    y_pos = np.arange(len(fold_names))
+    
+    for i, fold in enumerate(folds_config):
+        tr_s = pd.Timestamp(fold["train_start"])
+        tr_e = pd.Timestamp(fold["train_end"])
+        v_s = pd.Timestamp(fold["val_start"])
+        v_e = pd.Timestamp(fold["val_end"])
+        
+        ax.barh(i, (tr_e - tr_s).days, left=tr_s, height=0.45, color="#2980b9", alpha=0.85, label="Train Set (Expanding Window)" if i == 0 else "")
+        val_color = "#e74c3c" if fold["fold_id"] == 1 else "#f39c12"
+        ax.barh(i, (v_e - v_s).days, left=v_s, height=0.45, color=val_color, alpha=0.85, label="Validation (with Tet)" if fold["fold_id"] == 1 else ("Validation Set" if i == 1 else ""))
+
+    ax.axvline(pd.Timestamp("2024-02-10"), color="red", linestyle=":", linewidth=1.5, label="Lunar New Year 2024")
+    ax.axvline(pd.Timestamp("2025-01-29"), color="darkred", linestyle="--", linewidth=1.8, label="Lunar New Year 2025 (Fold 1 Mirror)")
+    ax.axvline(pd.Timestamp("2026-02-17"), color="purple", linestyle="--", linewidth=1.8, label="Lunar New Year 2026 (Kaggle Test)")
+
+    ax.set_yticks(y_pos)
+    ax.set_yticklabels(fold_names, fontsize=11, fontweight="bold")
+    ax.invert_yaxis()
+    ax.set_xlabel("Date", fontsize=11)
+    ax.set_title("4-Fold Expanding Window Time-Series Cross-Validation Architecture", fontsize=13, fontweight="bold")
+    ax.legend(loc="lower left", bbox_to_anchor=(0.0, 1.02), ncol=3, fontsize=10)
+    ax.grid(True, linestyle="--", alpha=0.5, axis="x")
+
+    plt.tight_layout()
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    fig.savefig(output_path, dpi=150)
+    plt.close(fig)
+    return output_path
 
 
 class TimeSeriesExpandingCV:

@@ -86,12 +86,12 @@ def compute_ablation_study_table() -> pd.DataFrame:
     """
     ablation_data = [
         {
-            "Step": "0. Dummy Baseline (Overall Median)",
+            "Step": "0. Overall Median Baseline",
             "Holdout RMSLE": 0.4360,
             "Seasonal Tet RMSLE": 0.4954,
             "Delta vs Previous": "0.0000",
             "Cumulative Gain": "0.0%",
-            "Description": "Dự báo mọi quán mọi ngày bằng trung vị toàn cục (18.28 tr.VNĐ)"
+            "Description": "Predict overall training median (18.28M VND) for all stores"
         },
         {
             "Step": "1. Starter Baseline (weekday_median)",
@@ -99,39 +99,39 @@ def compute_ablation_study_table() -> pd.DataFrame:
             "Seasonal Tet RMSLE": 0.2761,
             "Delta vs Previous": "-0.2084",
             "Cumulative Gain": "-47.8%",
-            "Description": "Trung vị theo (store_id, dayofweek) từ starter_cafe.ipynb"
+            "Description": "Historical median by (store_id, dayofweek) from starter_cafe.ipynb"
         },
         {
-            "Step": "2. + Làm sạch dữ liệu bẩn (10 Lỗi)",
+            "Step": "2. + Clean Dirty Data (10 Errors)",
             "Holdout RMSLE": 0.2110,
             "Seasonal Tet RMSLE": 0.2490,
             "Delta vs Previous": "-0.0166",
             "Cumulative Gain": "-51.6%",
-            "Description": "Xử lý 1000x tại S12, 10x, 0.1x, chuẩn hóa store_type/district, đổi °F sang °C"
+            "Description": "Fixed 1000x at S12, 10x, 0.1x, normalized store_type/district, converted °F to °C"
         },
         {
-            "Step": "3. + Nền công suất quán & Cold-Start",
+            "Step": "3. + Store Capacity & Cold-Start",
             "Holdout RMSLE": 0.1460,
             "Seasonal Tet RMSLE": 0.2150,
             "Delta vs Previous": "-0.0650",
             "Cumulative Gain": "-66.5%",
-            "Description": "Empirical Bayes Shrinkage + ước lượng quán mới (S01, S19, S45) + ramp-up curve"
+            "Description": "Empirical Bayes Shrinkage + new store estimates (S01, S19, S45) + ramp-up curve"
         },
         {
-            "Step": "4. + Đặc trưng Lịch & Tết Nguyên Đán",
+            "Step": "4. + Calendar & Tet Features",
             "Holdout RMSLE": 0.1340,
             "Seasonal Tet RMSLE": 0.1650,
             "Delta vs Previous": "-0.0120",
             "Cumulative Gain": "-69.3%",
-            "Description": "Biến days_from_tet, sin/cos doy, kỳ nghỉ hè sinh viên và ngày lễ Quốc gia"
+            "Description": "days_from_tet, sin/cos doy, student summer break, and national holidays"
         },
         {
-            "Step": "5. + Thời tiết & Khuyến mãi tương tác",
+            "Step": "5. + Weather & Promo Interactions",
             "Holdout RMSLE": 0.1258,
             "Seasonal Tet RMSLE": 0.1498,
             "Delta vs Previous": "-0.0082",
             "Cumulative Gain": "-71.1%",
-            "Description": "Tương tác is_promo x is_heavy_rain, mưa x vị trí quán (outdoor/mall), độ lệch nhiệt độ"
+            "Description": "is_promo x is_heavy_rain interaction, rain x store location (outdoor/mall), temp deviations"
         },
         {
             "Step": "6. + GBDT SOTA & Macro Trend Ensemble",
@@ -139,7 +139,7 @@ def compute_ablation_study_table() -> pd.DataFrame:
             "Seasonal Tet RMSLE": 0.1341,
             "Delta vs Previous": "-0.0110",
             "Cumulative Gain": "-73.7%",
-            "Description": "Khử xu thế vĩ mô (De-trend) + tương tác Tết loại quán + Weighted Ensemble SLSQP"
+            "Description": "Macro de-trending + Tet x store type interactions + Weighted SLSQP Ensemble"
         }
     ]
     return pd.DataFrame(ablation_data)
@@ -287,7 +287,7 @@ def generate_evaluation_plots(
         0.05, 0.90,
         f"Weighted Blend Ensemble (SOTA)\n"
         f"RMSLE: {ens_rmsle:.4f} (-46.5% vs Baseline)\n"
-        f"MAE: {mae_val:.2f} tr.VNĐ | R²: {r2_val:.4f}",
+        f"MAE: {mae_val:.2f}M VND | R²: {r2_val:.4f}",
         transform=ax.transAxes,
         fontsize=11, verticalalignment="top",
         bbox=dict(boxstyle="round,pad=0.5", facecolor="white", edgecolor="#1f77b4", alpha=0.9)
@@ -376,7 +376,7 @@ def generate_evaluation_plots(
     else:
         # Nếu tập val không có quán dưới 60 ngày, vẽ theo nhóm tuổi quán
         bins = [0, 90, 180, 365, 730]
-        labels = ["<3 tháng", "3-6 tháng", "6-12 tháng", ">1 năm"]
+        labels = ["<3 months", "3-6 months", "6-12 months", ">1 year"]
         df_diag["age_group"] = pd.cut(df_diag["days_since_open"], bins=bins, labels=labels)
         age_agg = df_diag.groupby("age_group")[["actual", "pred"]].mean().reset_index()
         ax.bar(np.arange(len(age_agg)) - 0.2, age_agg["actual"], 0.4, label="Actual", color="#1f77b4")
@@ -428,9 +428,18 @@ def generate_evaluation_plots(
         ax.text(i, t + 0.012, f"{t:.4f}", ha='center', fontsize=9, fontweight='bold', color="#d62728")
         
     ax.set_title("Figure 6: RMSLE Reduction Progression Across Ablation Steps", fontsize=13, fontweight="bold", pad=12)
-    ax.set_ylabel("RMSLE (Càng thấp càng chính xác)", fontsize=11)
+    ax.set_ylabel("RMSLE (Lower is better)", fontsize=11)
     ax.set_xticks(range(len(ablation_df)))
-    ax.set_xticklabels([f"S{i}\n{ablation_df.loc[i, 'Step'].split(':')[0][:12]}" for i in range(len(ablation_df))], fontsize=9)
+    short_step_names = [
+        "S0: Median",
+        "S1: Weekday",
+        "S2: Clean Data",
+        "S3: Capacity",
+        "S4: Calendar",
+        "S5: Weather",
+        "S6: Ensemble"
+    ]
+    ax.set_xticklabels(short_step_names[:len(ablation_df)], fontsize=9)
     ax.set_ylim(0.08, 0.55)
     ax.legend(loc="upper right")
     plt.tight_layout()
