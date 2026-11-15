@@ -10,7 +10,7 @@ import pandas as pd
 import numpy as np
 from typing import Dict, Tuple, List, Any, Optional
 
-from sklearn.base import BaseEstimator, TransformerMixin, RegressorMixin
+from sklearn.base import BaseEstimator, TransformerMixin, RegressorMixin, clone
 from sklearn.pipeline import Pipeline
 from sklearn.compose import ColumnTransformer, TransformedTargetRegressor
 from sklearn.preprocessing import StandardScaler, RobustScaler, OneHotEncoder
@@ -150,6 +150,180 @@ class MultiSeedBaggedPipeline(BaseEstimator, RegressorMixin):
         preds_log = [np.log1p(np.maximum(0.0, p.predict(X))) for p in self.pipelines]
         avg_log = np.mean(preds_log, axis=0)
         return np.maximum(0.0, np.expm1(avg_log))
+
+
+class HierTrendWrapper(BaseEstimator, RegressorMixin):
+    """
+    Lớp bao bọc mô hình học máy kết hợp ước lượng xu thế phân cấp (Hierarchical Store Slopes):
+    y_star = y_log - slope_global * t - s_slope_dev[sid] * (t - s_tmean[sid]) - offset
+    Huấn luyện regressor trên y_star, tái lập lại xu thế toàn cục và độ dốc co làm mượt riêng cho từng quán.
+    """
+    def __init__(self, regressor: Any, store_slope_alpha: float = 35.0, use_offset: bool = False):
+        self.regressor = regressor
+        self.store_slope_alpha = store_slope_alpha
+        self.use_offset = use_offset
+        self.slope_ = 0.0
+        self.s_slope_dev_ = {}
+        self.s_tmean_ = {}
+        self.reg_ = None
+
+    def _get_offset(self, X: pd.DataFrame) -> np.ndarray:
+        if not self.use_offset:
+            return np.zeros(len(X), dtype=float)
+        b = X["store_base_log_rev"].values if "store_base_log_rev" in X.columns else np.zeros(len(X))
+        o = X["store_dow_offset"].values if "store_dow_offset" in X.columns else np.zeros(len(X))
+        return b + o
+
+    def fit(self, X: Any, y: np.ndarray):
+        t = X["t_years"].values.astype(float) if isinstance(X, pd.DataFrame) and "t_years" in X.columns else np.zeros(len(X), dtype=float)
+        y_log = np.log1p(np.clip(y, 0.0, None))
+        if isinstance(X, pd.DataFrame) and "store_id" in X.columns and X["store_id"].nunique() > 1 and np.ptp(t) > 0.01:
+            ym = pd.Series(y_log, index=X.index).groupby(X["store_id"]).transform("mean").values
+            tm = X["t_years"].groupby(X["store_id"]).transform("mean").values
+            tc, yc = t - tm, y_log - ym
+            denom = float(np.sum(tc ** 2))
+            self.slope_ = float(np.sum(tc * yc) / denom) if denom > 1e-6 else 0.0
+        else:
+            self.slope_ = 0.0
+
+        y_glob_star = y_log - self.slope_ * t
+        self.s_slope_dev_ = {}
+        self.s_tmean_ = {}
+        if isinstance(X, pd.DataFrame) and "store_id" in X.columns:
+            dso = X["days_since_open"].values if "days_since_open" in X.columns else np.full(len(X), 100)
+            dtet = X["days_from_tet_exact"].values if "days_from_tet_exact" in X.columns else np.full(len(X), 100)
+            tmp = pd.DataFrame({"store_id": X["store_id"].values, "t": t, "y_gs": y_glob_star, "dso": dso, "dtet": dtet})
+            sub = tmp[(tmp["dso"] > 75) & (np.abs(tmp["dtet"]) > 15)]
+            for sid, g in sub.groupby("store_id"):
+                if len(g) >= 60:
+                    gt_m = float(g["t"].mean())
+                    gt_c = g["t"].values - gt_m
+                    gy_c = g["y_gs"].values - float(g["y_gs"].mean())
+                    sl = float(np.sum(gt_c * gy_c) / (np.sum(gt_c ** 2) + self.store_slope_alpha))
+                    self.s_slope_dev_[sid] = float(np.clip(sl, -0.15, 0.15))
+                    self.s_tmean_[sid] = gt_m
+
+        adj_tr = np.array([self.s_slope_dev_.get(s, 0.0) * (tv - self.s_tmean_.get(s, tv)) for s, tv in zip(X["store_id"], t)]) if isinstance(X, pd.DataFrame) and "store_id" in X.columns else np.zeros(len(X))
+        y_target = y_glob_star - adj_tr - self._get_offset(X)
+        self.reg_ = clone(self.regressor)
+        self.reg_.fit(X, y_target)
+        return self
+
+    def predict(self, X: Any) -> np.ndarray:
+        t = X["t_years"].values.astype(float) if isinstance(X, pd.DataFrame) and "t_years" in X.columns else np.zeros(len(X), dtype=float)
+        adj = np.array([self.s_slope_dev_.get(s, 0.0) * (tv - self.s_tmean_.get(s, tv)) for s, tv in zip(X["store_id"], t)]) if isinstance(X, pd.DataFrame) and "store_id" in X.columns else np.zeros(len(X))
+        p_star = self.reg_.predict(X)
+        p_log = p_star + self._get_offset(X) + self.slope_ * t + adj
+        return np.clip(np.expm1(p_log), 0.0, None)
+
+
+class OffsetTrendWrapper(BaseEstimator, RegressorMixin):
+    """
+    Lớp bao bọc mô hình học máy trên phần dư của mức nền cố định:
+    y_target = y_log - slope * t - (store_base_log_rev + store_dow_offset)
+    Tập trung năng lực cây quyết định học các biến động môi trường, thời tiết, sự kiện, chiến dịch khuyến mãi.
+    """
+    def __init__(self, regressor: Any, use_ramp_in_offset: bool = False):
+        self.regressor = regressor
+        self.use_ramp_in_offset = use_ramp_in_offset
+        self.slope_ = 0.0
+        self.reg_ = None
+
+    def _get_offset(self, X: pd.DataFrame) -> np.ndarray:
+        b = X["store_base_log_rev"].values if "store_base_log_rev" in X.columns else np.zeros(len(X))
+        o = X["store_dow_offset"].values if "store_dow_offset" in X.columns else np.zeros(len(X))
+        return b + o
+
+    def fit(self, X: Any, y: np.ndarray):
+        t = X["t_years"].values.astype(float) if isinstance(X, pd.DataFrame) and "t_years" in X.columns else np.zeros(len(X), dtype=float)
+        y_log = np.log1p(np.clip(y, 0.0, None))
+        if isinstance(X, pd.DataFrame) and "store_id" in X.columns and X["store_id"].nunique() > 1 and np.ptp(t) > 0.01:
+            ym = pd.Series(y_log, index=X.index).groupby(X["store_id"]).transform("mean").values
+            tm = X["t_years"].groupby(X["store_id"]).transform("mean").values
+            tc, yc = t - tm, y_log - ym
+            denom = float(np.sum(tc ** 2))
+            self.slope_ = float(np.sum(tc * yc) / denom) if denom > 1e-6 else 0.0
+        else:
+            self.slope_ = 0.0
+
+        base_off = self._get_offset(X) if isinstance(X, pd.DataFrame) else np.zeros(len(X))
+        y_target = y_log - self.slope_ * t - base_off
+        self.reg_ = clone(self.regressor)
+        self.reg_.fit(X, y_target)
+        return self
+
+    def predict(self, X: Any) -> np.ndarray:
+        t = X["t_years"].values.astype(float) if isinstance(X, pd.DataFrame) and "t_years" in X.columns else np.zeros(len(X), dtype=float)
+        base_off = self._get_offset(X) if isinstance(X, pd.DataFrame) else np.zeros(len(X))
+        p_star = self.reg_.predict(X)
+        pred_log = p_star + base_off + self.slope_ * t
+        return np.clip(np.expm1(pred_log), 0.0, None)
+
+
+class RidgeOHEInteractiveWrapper(BaseEstimator, RegressorMixin):
+    """
+    Ridge hồi quy tuyến tính OHE với các biến tương tác bậc cao st_dow_cat và city_month_cat.
+    Được sinh ra nội bộ để tránh làm phình categorical_cols của hệ thống chung.
+    """
+    def __init__(self, alpha: float = 10.0, numeric_cols: Optional[List[str]] = None, categorical_cols: Optional[List[str]] = None):
+        self.alpha = alpha
+        self.numeric_cols = numeric_cols
+        self.categorical_cols = categorical_cols
+        self.pipe_ = None
+
+    def _add_interactions(self, df: pd.DataFrame) -> pd.DataFrame:
+        res = df.copy()
+        res["st_dow_cat"] = res["store_type"].astype(str) + "_" + res["dow"].astype(str)
+        res["city_month_cat"] = res["city"].astype(str) + "_" + res["month"].astype(str)
+        return res
+
+    def fit(self, X: pd.DataFrame, y: np.ndarray):
+        X_aug = self._add_interactions(X)
+        num_cols, cat_cols, _ = get_feature_column_types(X)
+        use_cats = cat_cols + ["store_id", "st_dow_cat", "city_month_cat"]
+        use_nums = [c for c in num_cols if c != "store_id" and c not in ["st_dow_cat", "city_month_cat"]]
+        feats = use_nums + use_cats + [c for c in ["t_years", "date"] if c in X_aug.columns]
+        
+        self.pipe_ = build_leakage_free_pipeline(Ridge(alpha=self.alpha, random_state=42), use_nums, use_cats, use_trend_aware=True)
+        self.pipe_.fit(X_aug[feats], y)
+        return self
+
+    def predict(self, X: pd.DataFrame) -> np.ndarray:
+        X_aug = self._add_interactions(X)
+        num_cols, cat_cols, _ = get_feature_column_types(X)
+        use_cats = cat_cols + ["store_id", "st_dow_cat", "city_month_cat"]
+        use_nums = [c for c in num_cols if c != "store_id" and c not in ["st_dow_cat", "city_month_cat"]]
+        feats = use_nums + use_cats + [c for c in ["t_years", "date"] if c in X_aug.columns]
+        return self.pipe_.predict(X_aug[feats])
+
+
+class MultiModelLogBlendEstimator(BaseEstimator, RegressorMixin):
+    """
+    Bộ kết hợp đa mô hình tuyến tính trên không gian logarit ln(1 + y):
+    ln(1 + y_pred) = sum(w_i * ln(1 + y_pred_i))
+    Giúp tạo các ước lượng đa tầng (composite estimator) đại diện cho từng key trong bundle:
+    Ridge (PanelV7 + Ridge_OHE), CatBoost (Direct + HierSS), LightGBM (LinearTree Direct + HierSS).
+    """
+    def __init__(self, models: List[Tuple[str, Any, float]]):
+        self.models = models
+        self.fitted_models_ = []
+
+    def fit(self, X: Any, y: np.ndarray):
+        self.fitted_models_ = []
+        for name, m, w in self.models:
+            m_cloned = clone(m)
+            m_cloned.fit(X, y)
+            self.fitted_models_.append((name, m_cloned, w))
+        return self
+
+    def predict(self, X: Any) -> np.ndarray:
+        total_w = sum(w for _, _, w in self.fitted_models_)
+        preds_log = []
+        for _, m, w in self.fitted_models_:
+            p = np.maximum(0.0, m.predict(X))
+            preds_log.append((w / total_w) * np.log1p(p))
+        blend_log = np.sum(preds_log, axis=0)
+        return np.maximum(0.0, np.expm1(blend_log))
 
 
 # ------------------------------------------------------------------------------

@@ -1,17 +1,18 @@
 {
-  "model_name": "Weighted Blend Ensemble (SOTA - 12-Seed Bagged Enhanced)",
-  "holdout_val_rmsle": 0.1103,
-  "seasonal_tet_rmsle": 0.1096,
-  "cv_mean_rmsle": 0.1103,
-  "val_mae_m_vnd": 1.81,
-  "val_rmse_m_vnd": 2.54,
-  "val_r2": 0.9185,
+  "model_name": "Weighted Blend Ensemble (SOTA - V7 Panel Econometric & GBDT)",
+  "cv_mean_rmsle": 0.1075,
+  "known_stores_rmsle": 0.1039,
+  "seasonal_tet_rmsle": 0.1067,
+  "holdout_val_rmsle": 0.1092,
+  "val_mae_m_vnd": 1.76,
+  "val_rmse_m_vnd": 2.45,
+  "val_r2": 0.925,
   "starter_baseline_rmsle": 0.2276,
-  "relative_improvement_pct": 52.0,
+  "relative_improvement_pct": 52.8,
   "ensemble_weights": {
-    "CatBoost": 0.6,
-    "Ridge (L2 Linear)": 0.2,
-    "LightGBM": 0.1,
-    "XGBoost": 0.1
+    "CatBoost": 0.38,
+    "Ridge (L2 Linear)": 0.51,
+    "LightGBM": 0.11,
+    "XGBoost": 0.0
   }
 }

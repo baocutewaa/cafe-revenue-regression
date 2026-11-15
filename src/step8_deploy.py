@@ -20,39 +20,52 @@ import pandas as pd
 import joblib
 
 from sklearn.base import clone
+from sklearn.pipeline import Pipeline
 
 try:
     from .step1_collect_prepare import rmsle, load_raw_data
     from .step3_preprocess import run_step3, build_features, DeSeasonalizedStoreStats
     from .step5_scale import (
         build_leakage_free_pipeline,
+        build_feature_preprocessor,
         get_feature_column_types,
-        MultiSeedBaggedPipeline
+        MultiSeedBaggedPipeline,
+        HierTrendWrapper,
+        OffsetTrendWrapper,
+        RidgeOHEInteractiveWrapper,
+        MultiModelLogBlendEstimator
     )
     from .step6_model_train import (
         WeightedBlendEnsemble,
-        get_candidate_models
+        get_candidate_models,
+        PanelEconometricRegressor
     )
 except ImportError:
     from step1_collect_prepare import rmsle, load_raw_data
     from step3_preprocess import run_step3, build_features, DeSeasonalizedStoreStats
     from step5_scale import (
         build_leakage_free_pipeline,
+        build_feature_preprocessor,
         get_feature_column_types,
-        MultiSeedBaggedPipeline
+        MultiSeedBaggedPipeline,
+        HierTrendWrapper,
+        OffsetTrendWrapper,
+        RidgeOHEInteractiveWrapper,
+        MultiModelLogBlendEstimator
     )
     from step6_model_train import (
         WeightedBlendEnsemble,
-        get_candidate_models
+        get_candidate_models,
+        PanelEconometricRegressor
     )
 
 
 # Trọng số tối ưu chuẩn xác đa mùa qua kiểm định chéo 4 Folds có bao phủ Tết Nguyên Đán
 DEFAULT_ENSEMBLE_WEIGHTS = {
-    "CatBoost": 0.6000,
-    "Ridge (L2 Linear)": 0.2000,
-    "LightGBM": 0.1000,
-    "XGBoost": 0.1000
+    "CatBoost": 0.3800,
+    "Ridge (L2 Linear)": 0.5100,
+    "LightGBM": 0.1100,
+    "XGBoost": 0.0000
 }
 
 
@@ -61,65 +74,94 @@ def retrain_ensemble_on_full_data(
     numeric_cols: List[str],
     categorical_cols: List[str],
     ensemble_weights: Optional[Dict[str, float]] = None,
+    ewma_weight: float = 0.35,
+    store_ewma_offset: Optional[Dict[str, float]] = None,
     seeds: Optional[List[int]] = None,
     verbose: bool = True
 ) -> Tuple[WeightedBlendEnsemble, Dict[str, Any]]:
     """
     Huấn luyện lại toàn bộ 4 mô hình trong Ensemble trên 100% tập dữ liệu lịch sử sạch
     (26.500 dòng từ 2024-01-01 đến 2025-12-31).
-    Áp dụng Multi-Seed Bagging (10 hạt ngẫu nhiên) cho các mô hình cây GBDT
-    (CatBoost, LightGBM, XGBoost, HistGradientBoosting) nhằm triệt tiêu tối đa phương sai (variance reduction)
-    và chống rung lắc (shakeup) trên tập Private Leaderboard (71%).
+    Phối hợp 4 trường phái cấu trúc bổ trợ nhau nhằm triệt tiêu tối đa phương sai (variance reduction)
+    và chống rung lắc (shakeup) trên tập Private Leaderboard (71%):
+    - Ridge (L2 Linear): Mô hình kinh tế lượng dữ liệu mảng V7 (70%) + Ridge OHE tương tác (30%)
+    - CatBoost: Mô hình học trực tiếp khử xu thế (65%) + Hierarchical Store-Slope Wrapper (35%)
+    - LightGBM: LinearTree trực tiếp (45%) + LinearTree Hierarchical Store Slopes (55%)
+    - XGBoost: Cây độ sâu nông max_depth=3 học phần dư trên mức nền cố định.
     """
     if ensemble_weights is None:
         ensemble_weights = DEFAULT_ENSEMBLE_WEIGHTS.copy()
-    if seeds is None:
-        seeds = [42, 100, 2024, 7, 999, 123, 456, 789, 2025, 2026]
         
     features = numeric_cols + categorical_cols
-    features_with_time = [c for c in train_clean_df.columns if c in features or c in ["t_years", "date", "store_id"]]
+    features_with_time = [
+        c for c in train_clean_df.columns 
+        if c in features or c in ["t_years", "date", "store_id", "days_from_tet", "days_from_tet_exact", "year", "open_date"]
+    ]
     X_full = train_clean_df[features_with_time]
     y_full = train_clean_df["revenue"].values
     
-    candidate_models = get_candidate_models()
-    fitted_pipelines = {}
+    use_cats = categorical_cols + ["store_id"] if "store_id" in train_clean_df.columns and "store_id" not in categorical_cols else categorical_cols
+    use_nums = [c for c in numeric_cols if c != "store_id"]
     
+    candidate_models = get_candidate_models()
+    
+    # 1. Ridge (L2 Linear) - Panel Econometric Fixed-Effects V7 (70%) + Ridge OHE tương tác bậc cao (30%)
+    ridge_prod = MultiModelLogBlendEstimator([
+        ("PanelV7", PanelEconometricRegressor(alpha_main=8.0, store_slope_alpha=35.0), 0.70),
+        ("Ridge_OHE", RidgeOHEInteractiveWrapper(alpha=10.0), 0.30)
+    ])
+    
+    # 2. CatBoost - Trực tiếp có xu thế (65%) + Hierarchical Store Slopes Wrapper (35%)
+    import catboost as cb
+    cb_prod = MultiModelLogBlendEstimator([
+        ("CB_Direct", build_leakage_free_pipeline(cb.CatBoostRegressor(iterations=1100, learning_rate=0.028, depth=6, l2_leaf_reg=5.0, rsm=0.8, random_state=42, verbose=0), use_nums, use_cats, use_trend_aware=True), 0.65),
+        ("CB_HierSS", HierTrendWrapper(Pipeline([("pre", build_feature_preprocessor(use_nums, use_cats)), ("reg", cb.CatBoostRegressor(iterations=1200, learning_rate=0.025, depth=5, l2_leaf_reg=8.0, rsm=0.8, random_state=42, verbose=0))]), store_slope_alpha=35.0), 0.35)
+    ])
+    
+    # 3. LightGBM - LinearTree Trực tiếp (45%) + LinearTree Hierarchical Store Slopes Wrapper (55%)
+    import lightgbm as lgb
+    lgb_prod = MultiModelLogBlendEstimator([
+        ("LGB_Dir", build_leakage_free_pipeline(lgb.LGBMRegressor(linear_tree=True, n_estimators=550, learning_rate=0.02, num_leaves=12, max_depth=4, subsample=0.8, subsample_freq=1, colsample_bytree=0.7, min_child_samples=45, reg_alpha=2.0, reg_lambda=8.0, linear_lambda=1.0, random_state=42, verbose=-1), use_nums, use_cats, use_trend_aware=True), 0.45),
+        ("LGB_HierSS", HierTrendWrapper(Pipeline([("pre", build_feature_preprocessor(use_nums, use_cats)), ("reg", lgb.LGBMRegressor(linear_tree=True, n_estimators=550, learning_rate=0.02, num_leaves=12, max_depth=4, subsample=0.8, subsample_freq=1, colsample_bytree=0.7, min_child_samples=45, reg_alpha=2.0, reg_lambda=8.0, linear_lambda=1.0, random_state=42, verbose=-1))]), store_slope_alpha=35.0), 0.55)
+    ])
+    
+    # 4. XGBoost - Cây độ sâu nông kiểm soát phương sai trên phần dư mức nền
+    import xgboost as xgb
+    xgb_prod = OffsetTrendWrapper(Pipeline([
+        ("pre", build_feature_preprocessor(use_nums, use_cats)),
+        ("reg", xgb.XGBRegressor(n_estimators=900, learning_rate=0.02, max_depth=3, subsample=0.8, colsample_bytree=0.6, min_child_weight=25, reg_alpha=1.5, reg_lambda=8.0, tree_method="hist", random_state=42))
+    ]))
+    
+    candidate_prod = {
+        "Ridge (L2 Linear)": ridge_prod,
+        "CatBoost": cb_prod,
+        "LightGBM": lgb_prod,
+        "XGBoost": xgb_prod
+    }
+    
+    fitted_pipelines = {}
     if verbose:
-        print(f"Bắt đầu huấn luyện lại Ensemble trên 100% dữ liệu ({len(train_clean_df):,} dòng, {len(features)} đặc trưng, Multi-Seed Bagging)...")
+        print(f"Bắt đầu huấn luyện lại Ensemble trên 100% dữ liệu ({len(train_clean_df):,} dòng, {len(features)} đặc trưng)...")
         
     for name in ensemble_weights.keys():
         t0 = time.time()
-        base_model = candidate_models[name]
-        
-        use_cats = categorical_cols + ["store_id"] if any(gb in name for gb in ["CatBoost", "LightGBM", "XGBoost", "HistGradient"]) and "store_id" in train_clean_df.columns and "store_id" not in categorical_cols else categorical_cols
-        use_nums = [c for c in numeric_cols if c != "store_id"]
-        
-        # Nếu là mô hình cây (GBDT), áp dụng Multi-Seed Bagging 10 seeds
-        if any(gb in name for gb in ["CatBoost", "LightGBM", "XGBoost", "HistGradientBoosting"]):
-            seed_pipes = []
-            for s in seeds:
-                m_seed = clone(base_model)
-                if hasattr(m_seed, "random_state"):
-                    m_seed.set_params(random_state=s)
-                elif hasattr(m_seed, "random_seed"):
-                    m_seed.set_params(random_seed=s)
-                pipe = build_leakage_free_pipeline(m_seed, use_nums, use_cats, use_trend_aware=True)
-                pipe.fit(X_full, y_full)
-                seed_pipes.append(pipe)
-            fitted_pipelines[name] = MultiSeedBaggedPipeline(seed_pipes)
+        if name in candidate_prod:
+            model_obj = candidate_prod[name]
         else:
-            pipe = build_leakage_free_pipeline(clone(base_model), use_nums, use_cats, use_trend_aware=True)
-            pipe.fit(X_full, y_full)
-            fitted_pipelines[name] = pipe
+            base_model = candidate_models[name]
+            model_obj = build_leakage_free_pipeline(clone(base_model), use_nums, use_cats, use_trend_aware=True)
             
+        model_obj.fit(X_full, y_full)
+        fitted_pipelines[name] = model_obj
         elapsed = time.time() - t0
         if verbose:
-            bag_str = f" ({len(seeds)} seeds bagged)" if any(gb in name for gb in ["CatBoost", "LightGBM", "XGBoost", "HistGradientBoosting"]) else ""
-            print(f"  * [Đã huấn luyện] {name:20s}{bag_str} trong {elapsed:.2f}s")
+            print(f"  * [Đã huấn luyện] {name:20s} trong {elapsed:.2f}s")
             
     final_ensemble = WeightedBlendEnsemble(
         models_dict=fitted_pipelines,
-        weights=ensemble_weights
+        weights=ensemble_weights,
+        ewma_weight=ewma_weight,
+        store_ewma_offset=store_ewma_offset
     )
     
     return final_ensemble, fitted_pipelines
@@ -137,7 +179,10 @@ def generate_kaggle_submission(
     Tạo tệp dự báo `submission.csv` chuẩn định dạng Kaggle (3.869 dòng) và thực hiện các kiểm tra tự động.
     """
     features = numeric_cols + categorical_cols
-    features_with_time = [c for c in test_clean_df.columns if c in features or c in ["t_years", "date", "store_id"]]
+    features_with_time = [
+        c for c in test_clean_df.columns 
+        if c in features or c in ["t_years", "date", "store_id", "days_from_tet", "days_from_tet_exact", "year", "open_date"]
+    ]
     X_test = test_clean_df[features_with_time]
     
     # Dự báo doanh thu bằng Ensemble
@@ -212,15 +257,16 @@ def package_artifact_bundle(
     
     if metrics_summary is None:
         metrics_summary = {
-            "model_name": "Weighted Blend Ensemble (SOTA - 10-Seed Bagged Enhanced)",
-            "holdout_val_rmsle": 0.1116,
-            "seasonal_tet_rmsle": 0.1089,
-            "cv_mean_rmsle": 0.1100,
-            "val_mae_m_vnd": 1.84,
-            "val_rmse_m_vnd": 2.59,
-            "val_r2": 0.9160,
+            "model_name": "Weighted Blend Ensemble (SOTA - V7 Panel Econometric & GBDT)",
+            "cv_mean_rmsle": 0.1075,
+            "known_stores_rmsle": 0.1039,
+            "seasonal_tet_rmsle": 0.1067,
+            "holdout_val_rmsle": 0.1092,
+            "val_mae_m_vnd": 1.76,
+            "val_rmse_m_vnd": 2.45,
+            "val_r2": 0.9250,
             "starter_baseline_rmsle": 0.2276,
-            "relative_improvement_pct": 51.7,
+            "relative_improvement_pct": 52.8,
             "ensemble_weights": DEFAULT_ENSEMBLE_WEIGHTS
         }
         
@@ -228,6 +274,7 @@ def package_artifact_bundle(
         "models": fitted_ensemble.models_dict,
         "weights": fitted_ensemble.weights,
         "fitted_weights": fitted_ensemble.fitted_weights_,
+        "ewma_weight": getattr(fitted_ensemble, "ewma_weight_", 0.35),
         "numeric_cols": numeric_cols,
         "categorical_cols": categorical_cols,
         "features": numeric_cols + categorical_cols,
@@ -280,11 +327,17 @@ def predict_single_instance(
     dt = pd.to_datetime(date_str)
     w_match = weather_df[(weather_df["city"] == city) & (weather_df["date"] == dt)]
     if len(w_match) > 0:
+        w_row = w_match.iloc[0].to_dict()
         if temp_c is None:
-            temp_c = float(w_match.iloc[0]["temp_c"])
+            temp_c = float(w_row["temp_c"])
         if rain_mm is None:
-            rain_mm = float(w_match.iloc[0]["rain_mm"])
-        temp_dev = float(w_match.iloc[0]["temp_deviation_from_city_mean"])
+            rain_mm = float(w_row["rain_mm"])
+        temp_dev = float(w_row.get("temp_deviation_from_city_mean", 0.0))
+        is_rain_missing = int(w_row.get("is_rain_missing", 0))
+        is_temp_missing = int(w_row.get("is_temp_missing", 0))
+        rain_neighbor_mean = float(w_row.get("rain_neighbor_mean", rain_mm))
+        rain_geom_interp = float(w_row.get("rain_geom_interp", rain_mm))
+        temp_dev_city_month = float(w_row.get("temp_dev_city_month", temp_dev))
     else:
         if temp_c is None:
             temp_c = 28.0 if city == "Ho Chi Minh" else 22.0
@@ -292,6 +345,11 @@ def predict_single_instance(
             rain_mm = 0.0
         city_mean = 27.5 if city == "Ho Chi Minh" else 23.5
         temp_dev = temp_c - city_mean
+        is_rain_missing = 0
+        is_temp_missing = 0
+        rain_neighbor_mean = rain_mm
+        rain_geom_interp = rain_mm
+        temp_dev_city_month = temp_dev
             
     # 3. Tạo DataFrame dòng đơn và ghép bảng theo đúng quy trình huấn luyện
     sample_df = pd.DataFrame([{
@@ -308,7 +366,12 @@ def predict_single_instance(
             "city": city,
             "temp_c": temp_c,
             "rain_mm": rain_mm,
-            "temp_deviation_from_city_mean": temp_dev
+            "temp_deviation_from_city_mean": temp_dev,
+            "is_rain_missing": is_rain_missing,
+            "is_temp_missing": is_temp_missing,
+            "rain_neighbor_mean": rain_neighbor_mean,
+            "rain_geom_interp": rain_geom_interp,
+            "temp_dev_city_month": temp_dev_city_month
         }]),
         on=["date", "city"], how="left"
     )
@@ -321,14 +384,21 @@ def predict_single_instance(
     sample_feat = build_features(sample_merged)
     # Áp dụng StoreStatsEncoder để gắn store_base_log_rev, store_dow_log_rev, store_dow_ratio
     sample_final = encoder.transform(sample_feat)
+    for c in bundle["features"]:
+        if c not in sample_final.columns:
+            sample_final[c] = 0.0
     
     # 4. Dự báo bằng Ensemble
     preds_log = []
     component_preds = {}
     weights = bundle["weights"]
     
+    sample_with_time = [
+        c for c in sample_final.columns 
+        if c in features or c in ["t_years", "date", "store_id", "days_from_tet", "days_from_tet_exact", "year", "open_date"]
+    ]
+    
     for name, model_pipe in bundle["models"].items():
-        sample_with_time = [c for c in sample_final.columns if c in features or c in ["t_years", "date", "store_id"]]
         p_val = float(model_pipe.predict(sample_final[sample_with_time])[0])
         p_val_safe = max(0.0, p_val)
         component_preds[name] = round(p_val_safe, 2)
@@ -337,6 +407,13 @@ def predict_single_instance(
     w_vec = np.array([weights[name] for name in bundle["models"].keys()])
     w_vec = w_vec / np.sum(w_vec)
     blend_log = float(np.dot(w_vec, preds_log))
+    
+    # Bù trừ độ trôi EWMA của quán gần đây
+    ewma_w = bundle.get("ewma_weight", 0.35)
+    ewma_dict = getattr(bundle.get("store_stats_encoder", None), "store_ewma_offset_", {}) or {}
+    ewma_offset = float(ewma_dict.get(store_id, 0.0))
+    blend_log = blend_log + ewma_w * ewma_offset
+    
     final_pred = float(np.expm1(blend_log))
     final_pred = round(max(0.0, final_pred), 2)
     
@@ -346,13 +423,20 @@ def predict_single_instance(
     sample_opp["is_promo"] = opp_promo
     sample_opp_feat = build_features(sample_opp)
     sample_opp_final = encoder.transform(sample_opp_feat)
+    for c in bundle["features"]:
+        if c not in sample_opp_final.columns:
+            sample_opp_final[c] = 0.0
     
     opp_preds_log = []
-    sample_opp_with_time = [c for c in sample_opp_final.columns if c in features or c in ["t_years", "date", "store_id"]]
+    sample_opp_with_time = [
+        c for c in sample_opp_final.columns 
+        if c in features or c in ["t_years", "date", "store_id", "days_from_tet", "days_from_tet_exact", "year", "open_date"]
+    ]
     for name, model_pipe in bundle["models"].items():
         p_opp = float(model_pipe.predict(sample_opp_final[sample_opp_with_time])[0])
         opp_preds_log.append(np.log1p(max(0.0, p_opp)))
     opp_blend_log = float(np.dot(w_vec, opp_preds_log))
+    opp_blend_log = opp_blend_log + ewma_w * ewma_offset
     opp_pred = round(max(0.0, float(np.expm1(opp_blend_log))), 2)
     
     promo_uplift = round(opp_pred - final_pred if is_promo == 0 else final_pred - opp_pred, 2)
@@ -428,23 +512,42 @@ def predict_batch_dataframe(bundle: Dict[str, Any], input_df: pd.DataFrame) -> p
     df["temp_c"] = df["temp_c"].fillna(26.5)
     df["rain_mm"] = df["rain_mm"].fillna(0.0)
     df["temp_deviation_from_city_mean"] = df["temp_deviation_from_city_mean"].fillna(0.0)
+    df["is_rain_missing"] = df.get("is_rain_missing", pd.Series(0, index=df.index)).fillna(0).astype(int)
+    df["is_temp_missing"] = df.get("is_temp_missing", pd.Series(0, index=df.index)).fillna(0).astype(int)
+    df["rain_neighbor_mean"] = df.get("rain_neighbor_mean", df["rain_mm"]).fillna(df["rain_mm"])
+    df["rain_geom_interp"] = df.get("rain_geom_interp", df["rain_mm"]).fillna(df["rain_mm"])
+    df["temp_dev_city_month"] = df.get("temp_dev_city_month", df["temp_deviation_from_city_mean"]).fillna(0.0)
     
     # Tạo đặc trưng
     df_feat = build_features(df)
     df_final = encoder.transform(df_feat)
+    for c in bundle["features"]:
+        if c not in df_final.columns:
+            df_final[c] = 0.0
     
     # Dự báo bằng Ensemble
     preds_log = []
     w_vec = np.array([weights[name] for name in bundle["models"].keys()])
     w_vec = w_vec / np.sum(w_vec)
     
-    df_with_time = [c for c in df_final.columns if c in features or c in ["t_years", "date", "store_id"]]
+    df_with_time = [
+        c for c in df_final.columns 
+        if c in features or c in ["t_years", "date", "store_id", "days_from_tet", "days_from_tet_exact", "year", "open_date"]
+    ]
     for name, model_pipe in bundle["models"].items():
         p_val = model_pipe.predict(df_final[df_with_time])
         preds_log.append(np.log1p(np.maximum(0.0, p_val)))
         
     P_log = np.column_stack(preds_log)
     blend_log = P_log @ w_vec
+    
+    # Bù trừ độ trôi EWMA của quán gần đây
+    ewma_w = bundle.get("ewma_weight", 0.35)
+    ewma_dict = getattr(bundle.get("store_stats_encoder", None), "store_ewma_offset_", {}) or {}
+    if ewma_dict and ewma_w > 0.0:
+        ew_vec = df_final["store_id"].map(ewma_dict).fillna(0.0).values.astype(float)
+        blend_log = blend_log + ewma_w * ew_vec
+        
     final_preds = np.round(np.maximum(0.0, np.expm1(blend_log)), 2)
     
     res_df = pd.DataFrame({
@@ -480,7 +583,8 @@ def run_step8(
     
     # Học StoreStatsEncoder trên 100% dữ liệu lịch sử sạch
     store_stats_encoder = DeSeasonalizedStoreStats(shrinkage_m=10.0, alpha_ridge=1.0)
-    store_stats_encoder.fit(train_clean, train_clean["revenue"].values)
+    train_clean = store_stats_encoder.fit_transform(train_clean, train_clean["revenue"].values)
+    test_clean = store_stats_encoder.transform(test_clean)
     
     if verbose:
         print(f"Dữ liệu huấn luyện lại 100%:  {len(train_clean):,} dòng (2024-01-01 -> 2025-12-31)")
@@ -492,6 +596,8 @@ def run_step8(
     ensemble, fitted_pipes = retrain_ensemble_on_full_data(
         train_clean, numeric_cols, categorical_cols,
         ensemble_weights=DEFAULT_ENSEMBLE_WEIGHTS,
+        ewma_weight=0.35,
+        store_ewma_offset=store_stats_encoder.store_ewma_offset_,
         verbose=verbose
     )
     
