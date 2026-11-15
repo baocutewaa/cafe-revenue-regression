@@ -6,12 +6,12 @@ Cafe Revenue Forecasting Multi-Store Interactive Platform
 import os
 import sys
 import json
+import time
 import datetime
 from typing import Dict, Any, Optional
 
 import numpy as np
 import pandas as pd
-import streamlit as pd_st
 import streamlit as st
 import requests
 import joblib
@@ -70,17 +70,17 @@ api_online = check_api_status()
 # ==============================================================================
 # SIDEBAR: THÔNG TIN KẾT NỐI & BỘ LỌC CỬA HÀNG
 # ==============================================================================
-st.sidebar.title("☕ Cafe Revenue AI")
-st.sidebar.markdown("**Hệ thống Dự báo Doanh thu Chuỗi Quán**")
+st.sidebar.title("Cafe Revenue AI")
+st.sidebar.caption("Dự báo doanh thu chuỗi cửa hàng")
 
 # Trạng thái kết nối
 if api_online:
-    st.sidebar.success("🟢 FastAPI Backend: **Online** (`:8000`)")
+    st.sidebar.success("FastAPI Backend: Online")
 else:
-    st.sidebar.warning("🟡 FastAPI: **Offline** (Đang chạy chế độ Local Artifact Bundle)")
+    st.sidebar.info("FastAPI Backend: Offline (Chế độ Local Artifact)")
 
 st.sidebar.markdown("---")
-st.sidebar.subheader("🏪 Chọn Cửa hàng")
+st.sidebar.subheader("Chọn cửa hàng")
 
 # Lấy danh sách stores từ bundle
 if local_bundle is not None:
@@ -107,10 +107,10 @@ if not stores_df.empty:
     # Thẻ thông tin nhanh về quán (Store Profile Card)
     curr_store = stores_df[stores_df["store_id"] == selected_store_id].iloc[0]
     st.sidebar.markdown("---")
-    st.sidebar.markdown(f"### 📋 Hồ sơ quán `{selected_store_id}`")
+    st.sidebar.markdown(f"### Thông tin quán `{selected_store_id}`")
     st.sidebar.markdown(f"- **Vị trí:** {curr_store['store_type'].upper()} ({curr_store['district']}, {curr_store['city']})")
-    st.sidebar.markdown(f"- **Quy mô:** {curr_store['seats']} ghế | {curr_store['area_m2']:.1f} $m^2$ ({curr_store['area_m2']/curr_store['seats']:.1f} $m^2$/ghế)")
-    st.sidebar.markdown(f"- **Bãi đỗ xe:** {'Có ✅' if curr_store['has_parking'] == 1 else 'Không ❌'}")
+    st.sidebar.markdown(f"- **Quy mô:** {curr_store['seats']} ghế | {curr_store['area_m2']:.1f} m² ({curr_store['area_m2']/curr_store['seats']:.1f} m²/ghế)")
+    st.sidebar.markdown(f"- **Bãi đỗ xe:** {'Có' if curr_store['has_parking'] == 1 else 'Không'}")
     st.sidebar.markdown(f"- **Ngày mở:** {str(curr_store['open_date'])[:10]}")
 else:
     selected_store_id = "S01"
@@ -119,33 +119,33 @@ else:
 # ==============================================================================
 # NỘI DUNG CHÍNH: 4 TABS CHUYÊN BIỆT
 # ==============================================================================
-st.title("☕ Nền Tảng Điều Hành & Dự Báo Doanh Thu Chuỗi Cafe")
-st.markdown("*Mô hình Ensemble SOTA: Tối ưu trực tiếp thước đo RMSLE, khử mùa vụ và kiểm định chéo chuỗi thời gian.*")
+st.title("Dự Báo Doanh Thu Chuỗi Cafe")
+st.caption("Mô hình Ensemble tối ưu trực tiếp RMSLE và kiểm định chuỗi thời gian.")
 
 tab1, tab2, tab3, tab4 = st.tabs([
-    "🎯 Dự Báo Ngày & What-If",
-    "📈 Lập Kế Hoạch Chuỗi Ngày & Mùa Tết",
-    "📂 Dự Báo Hàng Loạt (Kaggle Export)",
-    "📊 Đánh Giá Mô Hình & Khám Phá Dữ Liệu"
+    "Dự Báo Ngày",
+    "Lập Kế Hoạch Chuỗi Ngày",
+    "Dự Báo Hàng Loạt",
+    "Đánh Giá Mô Hình"
 ])
 
 
 # ------------------------------------------------------------------------------
-# TAB 1: DỰ BÁO NGÀY ĐƠN LẺ & WHAT-IF SIMULATOR
+# TAB 1: DỰ BÁO NGÀY ĐƠN LẺ
 # ------------------------------------------------------------------------------
 with tab1:
-    st.subheader(f"Mô phỏng Kịch bản Doanh thu cho quán `{selected_store_id}`")
+    st.subheader(f"Dự báo doanh thu quán `{selected_store_id}`")
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
         target_date = st.date_input(
-            "Chọn ngày dự báo",
-            datetime.date(2026, 2, 17), # Mùng 1 Tết Bính Ngọ
+            "Ngày dự báo",
+            datetime.date(2026, 2, 17),
             min_value=datetime.date(2024, 1, 1),
-            max_value=datetime.date(2026, 3, 31)
+            max_value=datetime.date(2030, 12, 31)
         )
     with col2:
-        is_promo = st.radio("Chương trình Khuyến mãi", [0, 1], format_func=lambda x: "Không có khuyến mãi" if x == 0 else "🔥 Có khuyến mãi (Promo)", index=0)
+        is_promo = st.radio("Khuyến mãi", [0, 1], format_func=lambda x: "Không khuyến mãi" if x == 0 else "Có khuyến mãi", index=0)
     with col3:
         temp_input = st.slider("Nhiệt độ dự kiến (°C)", min_value=10.0, max_value=42.0, value=28.0, step=0.5)
     with col4:
@@ -196,19 +196,19 @@ with tab1:
             st.metric(
                 label=f"Dự báo Doanh thu ({prediction_result['day_of_week']})",
                 value=f"{pred_val:.2f} triệu VNĐ",
-                delta=f"{'+' if is_promo == 1 else '-'}{abs(uplift_pct)}% do Khuyến mãi"
+                delta=f"{'+' if is_promo == 1 else '-'}{abs(uplift_pct)}% do KM"
             )
         with mcol2:
             st.metric(
-                label="Hiệu ứng Khuyến mãi (What-If Promo)",
+                label="Hiệu ứng Khuyến mãi",
                 value=f"{uplift_val:+.2f} triệu VNĐ",
-                delta=f"Doanh thu khi {'TẮT' if is_promo == 1 else 'BẬT'} KM: {opp_pred:.2f} tr.đ"
+                delta=f"Khi {'không KM' if is_promo == 1 else 'có KM'}: {opp_pred:.2f} tr.đ"
             )
         with mcol3:
-            st.info(f"**💡 Khuyến nghị Vận hành Tự động:**\n\n{prediction_result['operational_recommendation']}")
+            st.info(f"**Khuyến nghị vận hành:**\n\n{prediction_result['operational_recommendation']}")
             
         # Chi tiết phân rã các mô hình thành phần trong Ensemble
-        with st.expander("🔍 Xem chi tiết dự báo của từng mô hình thành phần trong Ensemble"):
+        with st.expander("Chi tiết từng mô hình thành phần"):
             comp_df = pd.DataFrame([
                 {"Mô hình": m, "Dự báo (tr.VNĐ)": v, "Trọng số đóng góp": f"{local_bundle['weights'].get(m, 0)*100:.1f}%"}
                 for m, v in prediction_result["component_predictions"].items()
@@ -217,19 +217,19 @@ with tab1:
 
 
 # ------------------------------------------------------------------------------
-# TAB 2: LẬP KẾ HOẠCH DOANH THU CHUỖI NGÀY & DỊP TẾT 2026
+# TAB 2: LẬP KẾ HOẠCH DOANH THU CHUỖI NGÀY
 # ------------------------------------------------------------------------------
 with tab2:
-    st.subheader(f"Lập kế hoạch Doanh thu Chuỗi ngày cho quán `{selected_store_id}`")
+    st.subheader(f"Kế hoạch doanh thu chuỗi ngày - Quán `{selected_store_id}`")
     pcol1, pcol2 = st.columns([1, 2])
     with pcol1:
         date_range = st.date_input(
-            "Chọn khoảng thời gian lập kế hoạch",
-            [datetime.date(2026, 2, 1), datetime.date(2026, 3, 10)], # Cao điểm Tết Bính Ngọ
-            min_value=datetime.date(2026, 1, 1),
-            max_value=datetime.date(2026, 3, 31)
+            "Khoảng thời gian lập kế hoạch",
+            [datetime.date(2026, 2, 1), datetime.date(2026, 3, 10)],
+            min_value=datetime.date(2024, 1, 1),
+            max_value=datetime.date(2030, 12, 31)
         )
-        plan_promo = st.checkbox("Mô phỏng bật Khuyến mãi toàn bộ chuỗi ngày", value=False)
+        plan_promo = st.checkbox("Áp dụng khuyến mãi toàn chuỗi ngày", value=False)
         
     if isinstance(date_range, (list, tuple)) and len(date_range) == 2 and local_bundle is not None:
         start_d, end_d = date_range
@@ -249,8 +249,8 @@ with tab2:
         forecast_plan["date_dt"] = pd.to_datetime(forecast_plan["date"])
         
         with pcol2:
-            st.markdown(f"**Tổng doanh thu dự kiến chuỗi {len(dates)} ngày:** `{forecast_plan['revenue'].sum():,.2f}` triệu VNĐ")
-            st.markdown(f"**Doanh thu bình quân/ngày:** `{forecast_plan['revenue'].mean():.2f}` triệu VNĐ (Min: `{forecast_plan['revenue'].min():.2f}`, Max: `{forecast_plan['revenue'].max():.2f}`)")
+            st.markdown(f"**Tổng doanh thu dự kiến ({len(dates)} ngày):** `{forecast_plan['revenue'].sum():,.2f}` triệu VNĐ")
+            st.markdown(f"**Bình quân/ngày:** `{forecast_plan['revenue'].mean():.2f}` triệu VNĐ (Min: `{forecast_plan['revenue'].min():.2f}`, Max: `{forecast_plan['revenue'].max():.2f}`)")
             
         # Vẽ biểu đồ chuỗi thời gian
         st.line_chart(
@@ -260,13 +260,13 @@ with tab2:
 
 
 # ------------------------------------------------------------------------------
-# TAB 3: DỰ BÁO HÀNG LOẠT & XUẤT SUBMISSION.CSV NỘP KAGGLE
+# TAB 3: DỰ BÁO HÀNG LOẠT
 # ------------------------------------------------------------------------------
 with tab3:
-    st.subheader("Dự báo Hàng loạt theo Tập tin CSV & Xuất kết quả Kaggle")
-    st.markdown("Tải lên tệp CSV chứa danh sách ngày cần dự báo (cột bắt buộc: `id, date, store_id, is_promo`). Mặc định đã có sẵn tệp `data/test.csv` (3,869 dòng).")
+    st.subheader("Dự báo hàng loạt từ tệp CSV")
+    st.markdown("Tải lên tệp CSV cần dự báo (yêu cầu các cột: `id, date, store_id, is_promo`), hoặc sử dụng tệp mặc định `data/test.csv`.")
     
-    uploaded_file = st.file_uploader("Tải lên tệp CSV tùy chỉnh", type=["csv"])
+    uploaded_file = st.file_uploader("Tải lên tệp CSV", type=["csv"])
     
     batch_source_df = None
     if uploaded_file is not None:
@@ -279,26 +279,26 @@ with tab3:
             st.info(f"Đang sử dụng tệp mặc định `data/test.csv` ({len(batch_source_df):,} dòng).")
             
     if batch_source_df is not None and local_bundle is not None:
-        if st.button("🚀 Chạy Dự Báo Hàng Loạt Bằng Ensemble"):
-            with st.spinner("Đang tính toán dự báo trên 100% dữ liệu..."):
+        if st.button("Chạy dự báo hàng loạt"):
+            with st.spinner("Đang tính toán dự báo..."):
                 t0 = time.time()
                 batch_pred_df = predict_batch_dataframe(local_bundle, batch_source_df)
                 elapsed = time.time() - t0
                 
-            st.success(f"Dự báo hoàn tất trong {elapsed:.2f} giây! Tổng số dòng: {len(batch_pred_df):,}")
+            st.success(f"Hoàn tất trong {elapsed:.2f} giây. Tổng số dòng: {len(batch_pred_df):,}")
             
             bcol1, bcol2 = st.columns([2, 1])
             with bcol1:
-                st.markdown("#### Xem trước 15 dòng đầu kết quả:")
+                st.markdown("#### Xem trước kết quả:")
                 st.dataframe(batch_pred_df.head(15), use_container_width=True)
             with bcol2:
-                st.markdown("#### Thống kê phân phối:")
+                st.markdown("#### Thống kê:")
                 st.write(batch_pred_df["revenue"].describe().to_frame())
                 
             # Nút tải xuống submission.csv
             csv_data = batch_pred_df[["id", "revenue"]].to_csv(index=False).encode('utf-8')
             st.download_button(
-                label="📥 Tải xuống tệp submission.csv chuẩn Kaggle",
+                label="Tải xuống tệp submission.csv",
                 data=csv_data,
                 file_name="submission.csv",
                 mime="text/csv"
@@ -306,10 +306,10 @@ with tab3:
 
 
 # ------------------------------------------------------------------------------
-# TAB 4: BẢNG ĐIỀU KHIỂN CHẤT LƯỢNG MÔ HÌNH & KHÁM PHÁ DỮ LIỆU
+# TAB 4: ĐÁNH GIÁ CHẤT LƯỢNG MÔ HÌNH
 # ------------------------------------------------------------------------------
 with tab4:
-    st.subheader("Bảng Điều Khiển Chất Lượng Mô Hình & Giải Thích Đặc Trưng")
+    st.subheader("Đánh giá chất lượng mô hình")
     
     # Tải model metrics JSON
     metrics_path = os.path.join(ROOT_DIR, "artifacts", "model_metrics_summary.json")
@@ -327,27 +327,27 @@ with tab4:
     ecol1, ecol2 = st.columns(2)
     
     with ecol1:
-        st.markdown("#### 1. Lộ trình cải thiện RMSLE (Ablation Study):")
+        st.markdown("#### 1. Lộ trình cải thiện RMSLE (Ablation Study)")
         ablation_img = os.path.join(ROOT_DIR, "plots", "eval_6_ablation_study_waterfall.png")
         if os.path.exists(ablation_img):
-            st.image(ablation_img, caption="Mức giảm RMSLE từ Baseline 0.4360 xuống 0.1218 qua 6 bước", use_container_width=True)
+            st.image(ablation_img, caption="Mức giảm RMSLE qua từng giai đoạn cải tiến", use_container_width=True)
             
     with ecol2:
-        st.markdown("#### 2. Phân bố phần dư chuẩn tắc (Residuals Distribution):")
+        st.markdown("#### 2. Phân bố phần dư (Residuals)")
         res_img = os.path.join(ROOT_DIR, "plots", "eval_2_residual_distribution.png")
         if os.path.exists(res_img):
-            st.image(res_img, caption="Phần dư logarit tuân theo phân phối Gauss đối xứng (Skewness = -0.01)", use_container_width=True)
+            st.image(res_img, caption="Phân bố phần dư chuẩn hóa", use_container_width=True)
             
     st.markdown("---")
     ecol3, ecol4 = st.columns(2)
     with ecol3:
-        st.markdown("#### 3. Đối chiếu sai số theo Loại Vị trí Quán (Store Type):")
+        st.markdown("#### 3. Sai số theo loại vị trí (Store Type)")
         st_img = os.path.join(ROOT_DIR, "plots", "eval_3_rmsle_by_store_type.png")
         if os.path.exists(st_img):
-            st.image(st_img, caption="Đồng đều trên cả 5 phân khúc cửa hàng, không bị thiên lệch", use_container_width=True)
+            st.image(st_img, caption="Phân bổ RMSLE theo các phân khúc cửa hàng", use_container_width=True)
             
     with ecol4:
-        st.markdown("#### 4. Top 15 Đặc trưng Dẫn dắt Mô hình (Gain Importance):")
+        st.markdown("#### 4. Đặc trưng quan trọng (Feature Importance)")
         fi_img = os.path.join(ROOT_DIR, "plots", "eval_5_feature_importance_top20.png")
         if os.path.exists(fi_img):
-            st.image(fi_img, caption="Nền doanh thu, đường cong chạy đà, chu kỳ Tết và mưa là yếu tố hàng đầu", use_container_width=True)
+            st.image(fi_img, caption="Các đặc trưng có mức đóng góp cao nhất vào mô hình", use_container_width=True)
