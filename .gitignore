@@ -74,7 +74,19 @@ desktop.ini
 *.log
 *.tmp
 tmp/
+catboost_info/
+
+# Binary model artifacts (regenerated via `python -m src.step8_deploy` or API startup)
+*.joblib
+*.pkl
 
 # Plan files
 Regression_Plan.md
 *Plan.md
+
+# Word documents, temporary locks & scratch dumps (covers Group2_Report.docx, Sample_Report.docx)
+*.docx
+~$*.docx
+scratch/
+scratch_*.txt
+*_backup.py

@@ -34,6 +34,8 @@ from .step3_preprocess import (
     clean_holidays,
     clean_train_outliers,
     compute_ramp_up_factor,
+    compute_smooth_ramp_up_log,
+    add_promo_streak_features,
     build_features,
     DeSeasonalizedStoreStats,
     run_step3
@@ -55,10 +57,16 @@ from .step5_scale import (
     get_feature_column_types,
     build_feature_preprocessor,
     build_leakage_free_pipeline,
+    MultiSeedBaggedPipeline,
+    HierTrendWrapper,
+    OffsetTrendWrapper,
+    RidgeOHEInteractiveWrapper,
+    MultiModelLogBlendEstimator,
     run_step5
 )
 
 from .step6_model_train import (
+    PanelEconometricRegressor,
     WeightedBlendEnsemble,
     get_candidate_models,
     evaluate_predictions,
@@ -115,6 +123,8 @@ __all__ = [
     "clean_holidays",
     "clean_train_outliers",
     "compute_ramp_up_factor",
+    "compute_smooth_ramp_up_log",
+    "add_promo_streak_features",
     "build_features",
     "DeSeasonalizedStoreStats",
     "run_step3",
@@ -132,8 +142,14 @@ __all__ = [
     "get_feature_column_types",
     "build_feature_preprocessor",
     "build_leakage_free_pipeline",
+    "MultiSeedBaggedPipeline",
+    "HierTrendWrapper",
+    "OffsetTrendWrapper",
+    "RidgeOHEInteractiveWrapper",
+    "MultiModelLogBlendEstimator",
     "run_step5",
     # Step 6
+    "PanelEconometricRegressor",
     "WeightedBlendEnsemble",
     "get_candidate_models",
     "evaluate_predictions",

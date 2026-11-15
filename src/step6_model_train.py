@@ -44,7 +44,7 @@ import xgboost as xgb
 
 try:
     from .step1_collect_prepare import rmsle
-    from .step3_preprocess import run_step3
+    from .step3_preprocess import run_step3, DeSeasonalizedStoreStats
     from .step4_split import (
         get_starter_holdout_split,
         TimeSeriesExpandingCV,
@@ -54,11 +54,14 @@ try:
         build_leakage_free_pipeline,
         get_feature_column_types,
         transform_target,
-        inverse_transform_target
+        inverse_transform_target,
+        HierTrendWrapper,
+        OffsetTrendWrapper,
+        RidgeOHEInteractiveWrapper
     )
 except ImportError:
     from step1_collect_prepare import rmsle
-    from step3_preprocess import run_step3
+    from step3_preprocess import run_step3, DeSeasonalizedStoreStats
     from step4_split import (
         get_starter_holdout_split,
         TimeSeriesExpandingCV,
@@ -68,25 +71,226 @@ except ImportError:
         build_leakage_free_pipeline,
         get_feature_column_types,
         transform_target,
-        inverse_transform_target
+        inverse_transform_target,
+        HierTrendWrapper,
+        OffsetTrendWrapper,
+        RidgeOHEInteractiveWrapper
     )
 
 # Tắt warning hội tụ nếu có của SVR max_iter
 warnings.filterwarnings("ignore", category=UserWarning)
 
 
+class PanelEconometricRegressor(BaseEstimator, RegressorMixin):
+    """
+    Mô hình kinh tế lượng dữ liệu mảng V7 (Panel Econometric Fixed-Effects Model):
+    - Tách biệt hai giai đoạn (Decoupled Two-Stage Estimation):
+      Giai đoạn 1: Ước lượng mức chuẩn hóa (thời tiết, chu kỳ thứ, mùa thành phố, chuỗi KM, quy mô quán)
+                  trên các ngày KHÔNG thuộc Tết (|days_from_tet| > 15) để loại trừ triệt để tương quan giả.
+      Giai đoạn 2: Ước lượng độ lệch Tết (Tet Curve) chi tiết theo từng mô hình quán (store_type x days_from_tet_exact).
+    - Tích hợp độ dốc tăng trưởng riêng theo từng quán (Empirical Bayes Shrunk Store Slopes) với alpha=35.0.
+    """
+    def __init__(self, alpha_main: float = 8.0, store_slope_alpha: float = 35.0):
+        self.alpha_main = alpha_main
+        self.store_slope_alpha = store_slope_alpha
+        self.slope_ = 0.0
+        self.global_mean_ = 0.0
+        self.reg_ = None
+        self.ct_ = None
+        self.tet_map_ = {}
+        self.s_slope_ = {}
+        self.s_tmean_ = {}
+        self.num_cols_ = None
+        self.cat_cols_ = None
+
+    def _make_X_mat(self, df: pd.DataFrame):
+        from sklearn.preprocessing import StandardScaler, OneHotEncoder
+        from sklearn.compose import ColumnTransformer
+
+        d_tet = df["days_from_tet_exact"] if "days_from_tet_exact" in df.columns else df.get("days_from_tet", pd.Series(100, index=df.index))
+        is_mall = (df["store_type"] == "mall").astype(int)
+        is_street = (df["store_type"] == "street").astype(int)
+        is_res = (df["store_type"] == "residential").astype(int)
+        is_office = (df["store_type"] == "office").astype(int)
+        is_uni = (df["store_type"] == "university").astype(int)
+        is_nat_nt = df.get("is_non_tet_national_holiday", df.get("is_national_holiday", pd.Series(0, index=df.index)))
+
+        st_hol = np.where(
+            (is_nat_nt == 1) | (df.get("is_event_holiday", 0) == 1),
+            df["store_type"].astype(str) + "_" + np.where(is_nat_nt == 1, "nat", df.get("holiday_name_clean", pd.Series("None", index=df.index)).astype(str)),
+            "none"
+        )
+        dso = df.get("days_since_open", pd.Series(100, index=df.index))
+        ramp_bkt = np.select(
+            [dso < 0, dso <= 2, dso <= 7, dso <= 14, dso <= 30, dso <= 45, dso <= 60, dso <= 75, dso <= 90],
+            ["pre", "open0_2", "d3_7", "d8_14", "d15_30", "d31_45", "d46_60", "d61_75", "d76_90"],
+            default="mature"
+        )
+
+        out_cat = pd.DataFrame({
+            "store_id": df["store_id"].astype(str),
+            "st_dow": df["store_type"].astype(str) + "_" + df["dow"].astype(str),
+            "city_month": df["city"].astype(str) + "_" + df["month"].astype(str),
+            "st_promo_streak": np.where(
+                df.get("is_promo", 0) == 1,
+                df["store_type"].astype(str) + "_p" + df.get("promo_streak_clip", pd.Series(1, index=df.index)).astype(str),
+                "none"
+            ),
+            "st_hol": st_hol,
+            "ramp_bucket": ramp_bkt
+        }, index=df.index)
+
+        seats = df.get("seats", pd.Series(50, index=df.index))
+        area_m2 = df.get("area_m2", pd.Series(150, index=df.index))
+        aps = df.get("area_per_seat", area_m2 / np.maximum(1, seats))
+        rain_mm = df.get("rain_mm", pd.Series(0.0, index=df.index))
+        temp_c = df.get("temp_c", pd.Series(27.0, index=df.index))
+
+        num_feats = pd.DataFrame({
+            "log_seats": np.log1p(seats),
+            "log_area_m2": np.log1p(area_m2),
+            "area_per_seat": aps,
+            "has_parking": df.get("has_parking", pd.Series(1, index=df.index)),
+            "rain_lin_street": df.get("rain_lin_street", rain_mm * is_street),
+            "rain_lin_res": df.get("rain_lin_res", rain_mm * is_res),
+            "rain_lin_uni": df.get("rain_lin_uni", rain_mm * is_uni),
+            "rain_lin_office": df.get("rain_lin_office", rain_mm * is_office),
+            "rain_lin_mall": df.get("rain_lin_mall", rain_mm * is_mall),
+            "rain_log_outdoor": df.get("rain_x_outdoor", np.log1p(rain_mm) * (is_street | is_res | is_uni)),
+            "rain_log_office": df.get("rain_x_office", np.log1p(rain_mm) * is_office),
+            "rain_log_mall": df.get("rain_x_mall", np.log1p(rain_mm) * is_mall),
+            "is_heavy_rain": df.get("is_heavy_rain", (rain_mm >= 20.0).astype(int)),
+            "rain_missing_outdoor": df.get("rain_missing_outdoor", pd.Series(0, index=df.index)),
+            "rain_missing_mall": df.get("rain_missing_mall", pd.Series(0, index=df.index)),
+            "rain_geom_outdoor": df.get("rain_geom_outdoor", pd.Series(0.0, index=df.index)),
+            "temp_c": temp_c,
+            "temp_dev_city_month": df.get("temp_dev_city_month", pd.Series(0.0, index=df.index)),
+            "temp_x_hanoi": df.get("temp_x_hanoi", temp_c * (df["city"] == "Ha Noi").astype(int)),
+            "temp_x_outdoor": df.get("temp_x_outdoor", temp_c * (is_street | is_res | is_uni)),
+            "temp_cold_hanoi": df.get("temp_cold_hanoi", np.maximum(0.0, 20.0 - temp_c) * (df["city"] == "Ha Noi").astype(int)),
+            "log_days_since_open": df.get("log_days_since_open", np.log1p(np.maximum(0, dso))),
+            "inv_days_since_open": df.get("inv_days_since_open", pd.Series(0.0, index=df.index)),
+            "log_ramp_smooth": df.get("log_ramp_smooth", pd.Series(0.0, index=df.index)),
+            "is_weekend_promo": df.get("promo_x_weekend", pd.Series(0, index=df.index)),
+            "is_pure_val_mall": df.get("is_pure_valentine_mall", pd.Series(0, index=df.index)),
+            "is_pure_val_str": df.get("is_pure_valentine_street", pd.Series(0, index=df.index)),
+            "st_summer_uni": (is_uni & df["month"].isin([7, 8])).astype(int),
+        }, index=df.index)
+
+        cat_cols = list(out_cat.columns)
+        num_cols = list(num_feats.columns)
+        return pd.concat([num_feats, out_cat], axis=1), num_cols, cat_cols
+
+    def fit(self, X: pd.DataFrame, y: np.ndarray):
+        from sklearn.compose import ColumnTransformer
+        from sklearn.preprocessing import StandardScaler, OneHotEncoder
+        
+        df = X.copy().reset_index(drop=True)
+        y_log = np.log1p(np.clip(y, 0.0, None))
+        t = df["t_years"].values.astype(float) if "t_years" in df.columns else np.zeros(len(df))
+
+        # Xu thế toàn cục trong quán
+        if "store_id" in df.columns and df["store_id"].nunique() > 1 and np.ptp(t) > 0.01:
+            ym = pd.Series(y_log, index=df.index).groupby(df["store_id"]).transform("mean").values
+            tm = df["t_years"].groupby(df["store_id"]).transform("mean").values
+            tc, yc = t - tm, y_log - ym
+            denom = float(np.sum(tc ** 2))
+            self.slope_ = float(np.sum(tc * yc) / denom) if denom > 1e-6 else 0.0
+        else:
+            self.slope_ = 0.0
+
+        y_star = y_log - self.slope_ * t
+        base_off = df["store_base_log_rev"].values + df["store_dow_offset"].values if ("store_base_log_rev" in df.columns and "store_dow_offset" in df.columns) else np.zeros(len(df))
+        y_adj = y_star - base_off
+
+        # Giai đoạn 1: fit trên các ngày non-Tet (|d_tet| > 15)
+        d_col = "days_from_tet_exact" if "days_from_tet_exact" in df.columns else "days_from_tet"
+        non_tet = df[d_col].abs().values > 15 if d_col in df.columns else np.ones(len(df), dtype=bool)
+        if non_tet.sum() < 50:
+            non_tet = np.ones(len(df), dtype=bool)
+
+        self.global_mean_ = float(np.mean(y_adj[non_tet]))
+        comb, self.num_cols_, self.cat_cols_ = self._make_X_mat(df)
+        self.ct_ = ColumnTransformer([
+            ("num", StandardScaler(), self.num_cols_),
+            ("cat", OneHotEncoder(handle_unknown="ignore"), self.cat_cols_),
+        ])
+        X_s1 = self.ct_.fit_transform(comb.iloc[non_tet])
+        self.reg_ = Ridge(alpha=self.alpha_main, solver="lsqr", tol=1e-5)
+        self.reg_.fit(X_s1, y_adj[non_tet] - self.global_mean_)
+
+        # Giai đoạn 2: Tet curve per (store_type, d)
+        s1_all = base_off + self.global_mean_ + self.reg_.predict(self.ct_.transform(comb))
+        res_s1 = y_star - s1_all
+        tet_m = df[d_col].between(-18, 18).values if d_col in df.columns else np.zeros(len(df), dtype=bool)
+        if tet_m.sum() > 20:
+            df_tet = df.loc[tet_m].copy()
+            df_tet["res"] = res_s1[tet_m]
+            val_mask = (df_tet["month"] == 2) & (df_tet["day"] == 14)
+            self.tet_map_ = df_tet[~val_mask].groupby(["store_type", d_col])["res"].mean().to_dict()
+            for st in df["store_type"].unique():
+                vals = [self.tet_map_.get((st, d), np.nan) for d in range(-18, 19)]
+                s_ser = pd.Series(vals, index=range(-18, 19)).interpolate(method="linear").fillna(0.0)
+                for d, v in s_ser.items():
+                    self.tet_map_[(st, d)] = float(v)
+
+        # Giai đoạn 3: Empirical Bayes store slope deviations trên phần dư
+        tet_arr = np.array([self.tet_map_.get((st, d), 0.0) if -18 <= d <= 18 else 0.0 for st, d in zip(df["store_type"], df[d_col])]) if d_col in df.columns else np.zeros(len(df))
+        res_full = y_log - (s1_all + tet_arr)
+        df["res_tmp"] = res_full
+        dso_col = df.get("days_since_open", pd.Series(100, index=df.index))
+        dtet_s = df.get(d_col, pd.Series(100, index=df.index))
+        sub = df[(dso_col > 75) & (dtet_s.abs() > 15)]
+        self.s_slope_ = {}
+        self.s_tmean_ = {}
+        if "store_id" in df.columns and "t_years" in df.columns:
+            for sid, g in sub.groupby("store_id"):
+                if len(g) >= 60:
+                    tm_s = float(g["t_years"].mean())
+                    tc_s = g["t_years"].values - tm_s
+                    rc_s = g["res_tmp"].values - float(g["res_tmp"].mean())
+                    self.s_slope_[sid] = float(np.clip(np.sum(tc_s * rc_s) / (np.sum(tc_s ** 2) + self.store_slope_alpha), -0.15, 0.15))
+                    self.s_tmean_[sid] = tm_s
+
+        return self
+
+    def predict_log(self, X: pd.DataFrame) -> np.ndarray:
+        comb, _, _ = self._make_X_mat(X)
+        base_off = X["store_base_log_rev"].values + X["store_dow_offset"].values if ("store_base_log_rev" in X.columns and "store_dow_offset" in X.columns) else np.zeros(len(X))
+        s1 = base_off + self.global_mean_ + self.reg_.predict(self.ct_.transform(comb))
+        d_col = "days_from_tet_exact" if "days_from_tet_exact" in X.columns else "days_from_tet"
+        tet_adj = np.array([
+            self.tet_map_.get((st, d), 0.0) if -18 <= d <= 18 else 0.0
+            for st, d in zip(X["store_type"], X[d_col])
+        ], dtype=float) if d_col in X.columns else np.zeros(len(X))
+        t = X["t_years"].values.astype(float) if "t_years" in X.columns else np.zeros(len(X))
+        slope_adj = np.array([self.s_slope_.get(s, 0.0) * (tv - self.s_tmean_.get(s, tv)) for s, tv in zip(X["store_id"], t)]) if "store_id" in X.columns else np.zeros(len(X))
+        return s1 + tet_adj + self.slope_ * t + slope_adj
+
+    def predict(self, X: pd.DataFrame) -> np.ndarray:
+        return np.maximum(0.0, np.expm1(self.predict_log(X)))
+
+
 class WeightedBlendEnsemble(BaseEstimator, RegressorMixin):
     """
     Mô hình Ensemble kết hợp dự báo từ danh sách các Pipeline thành phần
     trên không gian logarit ln(1 + y) theo trọng số lồi tối ưu:
-        ln(1 + y_pred) = sum(w_i * ln(1 + y_pred_i))
+        ln(1 + y_pred) = sum(w_i * ln(1 + y_pred_i)) + ewma_weight * store_ewma_offset
         y_pred = max(0, exp(ln(1 + y_pred)) - 1)
     """
-    def __init__(self, models_dict: Dict[str, Any], weights: Optional[Dict[str, float]] = None):
+    def __init__(
+        self,
+        models_dict: Dict[str, Any],
+        weights: Optional[Dict[str, float]] = None,
+        ewma_weight: float = 0.0,
+        store_ewma_offset: Optional[Dict[str, float]] = None
+    ):
         self.models_dict = models_dict
         self.weights = weights if weights is not None else {}
         self.fitted_weights_ = np.array([])
         self.model_names_ = list(models_dict.keys())
+        self.ewma_weight_ = ewma_weight
+        self.store_ewma_offset_ = store_ewma_offset or {}
 
     def fit_weights(self, val_predictions_log: np.ndarray, y_val_true: np.ndarray) -> "WeightedBlendEnsemble":
         """
@@ -100,13 +304,17 @@ class WeightedBlendEnsemble(BaseEstimator, RegressorMixin):
         def objective(w):
             w_norm = w / np.sum(w)
             pred_blend_log = val_predictions_log @ w_norm
-            return np.mean((pred_blend_log - y_val_log) ** 2)
+            return np.mean((pred_blend_log - y_val_log) ** 2) * 10000.0
             
         init_w = np.ones(n_models) / n_models
         bounds = [(0.0, 1.0) for _ in range(n_models)]
         constraints = ({'type': 'eq', 'fun': lambda w: np.sum(w) - 1.0})
         
-        res = minimize(objective, init_w, method='SLSQP', bounds=bounds, constraints=constraints)
+        res = minimize(
+            objective, init_w, method='SLSQP',
+            bounds=bounds, constraints=constraints,
+            options={'ftol': 1e-12, 'maxiter': 1000}
+        )
         if res.success:
             optimal_w = res.x / np.sum(res.x)
         else:
@@ -119,7 +327,7 @@ class WeightedBlendEnsemble(BaseEstimator, RegressorMixin):
     def predict(self, X: Any) -> np.ndarray:
         """
         Dự báo doanh thu (triệu VNĐ) trên tập X bằng cách lấy trung bình có trọng số
-        các dự báo logarit của từng mô hình thành phần.
+        các dự báo logarit của từng mô hình thành phần, kết hợp offset EWMA trôi nếu có.
         """
         if len(self.fitted_weights_) == 0:
             if self.weights:
@@ -131,14 +339,19 @@ class WeightedBlendEnsemble(BaseEstimator, RegressorMixin):
         preds_log = []
         for name in self.model_names_:
             model = self.models_dict[name]
-            # Dự báo từ mô hình pipeline đã xuất ra doanh thu gốc y
-            # Ta chuyển sang thang log1p để kết hợp
             pred_y = model.predict(X)
             pred_y_safe = np.maximum(0.0, pred_y)
             preds_log.append(np.log1p(pred_y_safe))
             
         P_log = np.column_stack(preds_log)
         blend_log = P_log @ self.fitted_weights_
+        
+        # Bù trừ độ trôi quán gần đây qua EWMA
+        if hasattr(self, "store_ewma_offset_") and self.store_ewma_offset_ and hasattr(self, "ewma_weight_") and self.ewma_weight_ > 0.0:
+            if isinstance(X, pd.DataFrame) and "store_id" in X.columns:
+                ew_vec = X["store_id"].map(self.store_ewma_offset_).fillna(0.0).values.astype(float)
+                blend_log = blend_log + self.ewma_weight_ * ew_vec
+                
         return np.maximum(0.0, np.expm1(blend_log))
 
 
@@ -356,17 +569,17 @@ def run_time_series_cv_benchmark(
     verbose: bool = True
 ) -> pd.DataFrame:
     """
-    Chạy kiểm định chéo mở rộng theo thời gian (4 Folds) cho các mô hình đại diện:
-    Baseline, Ridge, HistGradientBoosting, LightGBM, CatBoost, XGBoost.
+    Chạy kiểm định chéo mở rộng theo thời gian (4 Folds) hoàn toàn KHÔNG RÒ RỈ (Zero Leakage):
+    - Khởi tạo và học lại DeSeasonalizedStoreStats hoàn toàn nội bộ trên từng fold huấn luyện (fold_tr).
+    - Đánh giá các mô hình đại diện: Baseline, Ridge, HistGB, LightGBM, CatBoost, XGBoost
+      và Weighted Blend Ensemble tối ưu.
     """
-    features = numeric_cols + categorical_cols
-    features_with_time = [c for c in train_clean_df.columns if c in features or c in ["t_years", "date", "store_id"]]
     cv = TimeSeriesExpandingCV()
     folds = list(cv.split(train_clean_df))
     
     models_to_test = {
         "Baseline (Weekday Median)": None,
-        "Ridge": Ridge(alpha=3.0, random_state=42),
+        "Ridge": Ridge(alpha=10.0, random_state=42),
         "HistGradientBoosting": HistGradientBoostingRegressor(max_iter=350, learning_rate=0.03, max_leaf_nodes=31, l2_regularization=1.5, random_state=42),
         "LightGBM": lgb.LGBMRegressor(n_estimators=550, learning_rate=0.028, num_leaves=28, subsample=0.8, colsample_bytree=0.7, min_child_samples=20, reg_alpha=1.0, reg_lambda=1.5, random_state=42, verbose=-1),
         "CatBoost": cb.CatBoostRegressor(iterations=750, learning_rate=0.03, depth=6, l2_leaf_reg=4.5, random_state=42, verbose=0),
@@ -374,15 +587,16 @@ def run_time_series_cv_benchmark(
     }
     
     cv_records = []
-    ens_weights = {"CatBoost": 0.60, "Ridge": 0.20, "LightGBM": 0.10, "XGBoost": 0.10}
+    ens_weights = {"CatBoost": 0.38, "Ridge": 0.51, "LightGBM": 0.11, "XGBoost": 0.00}
     fold_preds_log = {m: [] for m in ens_weights.keys()}
+    fold_ewma_offset = []
     fold_y_true = []
     
     for name, raw_model in models_to_test.items():
         fold_scores = []
         for fold_idx, (tr_idx, va_idx) in enumerate(folds, start=1):
-            fold_tr = train_clean_df.iloc[tr_idx]
-            fold_va = train_clean_df.iloc[va_idx]
+            fold_tr = train_clean_df.iloc[tr_idx].copy().reset_index(drop=True)
+            fold_va = train_clean_df.iloc[va_idx].copy().reset_index(drop=True)
             
             y_va = fold_va["revenue"].values
             if len(fold_y_true) < len(folds):
@@ -391,11 +605,28 @@ def run_time_series_cv_benchmark(
             if name == "Baseline (Weekday Median)":
                 pred_va = compute_weekday_median_baseline(fold_tr, fold_va)
             else:
-                use_cats = categorical_cols + ["store_id"] if any(gb in name for gb in ["CatBoost", "LightGBM", "XGBoost", "HistGradient"]) and "store_id" in train_clean_df.columns and "store_id" not in categorical_cols else categorical_cols
-                use_nums = [c for c in numeric_cols if c != "store_id"]
+                # Học lại bộ mã hóa thống kê hoàn toàn nội bộ trên fold_tr (Không rò rỉ!)
+                enc = DeSeasonalizedStoreStats(
+                    shrinkage_m=8.0, alpha_ridge=2.0,
+                    add_ewma_drift=True, ewma_hl=28.0, ewma_reg=30.0,
+                    smooth_tet=True
+                )
+                enc.fit(fold_tr, fold_tr["revenue"].values)
+                fold_tr_enc = enc.transform(fold_tr)
+                fold_va_enc = enc.transform(fold_va)
+                
+                if len(fold_ewma_offset) < len(folds):
+                    ew_arr = fold_va_enc["store_id"].map(enc.store_ewma_offset_).fillna(0.0).values.astype(float)
+                    fold_ewma_offset.append(ew_arr)
+                
+                num_c, cat_c, _ = get_feature_column_types(fold_tr_enc)
+                use_cats = cat_c + ["store_id"] if any(gb in name for gb in ["CatBoost", "LightGBM", "XGBoost", "HistGradient", "Ridge"]) and "store_id" in fold_tr_enc.columns else cat_c
+                use_nums = [c for c in num_c if c != "store_id"]
+                feats_wt = [c for c in fold_tr_enc.columns if c in (use_nums + use_cats) or c in ["t_years", "date", "store_id"]]
+                
                 pipeline = build_leakage_free_pipeline(clone(raw_model), use_nums, use_cats, use_trend_aware=True)
-                pipeline.fit(fold_tr[features_with_time], fold_tr["revenue"].values)
-                pred_va = pipeline.predict(fold_va[features_with_time])
+                pipeline.fit(fold_tr_enc[feats_wt], fold_tr["revenue"].values)
+                pred_va = pipeline.predict(fold_va_enc[feats_wt])
                 if name in fold_preds_log:
                     fold_preds_log[name].append(np.log1p(np.maximum(0.0, pred_va)))
                 
@@ -412,10 +643,12 @@ def run_time_series_cv_benchmark(
             "Std CV RMSLE": round(float(np.std(fold_scores)), 4)
         })
         
-    # Đánh giá Weighted Blend Ensemble từ 4 mô hình GBDT SOTA (tổng hợp dự báo trên không gian logarit)
+    # Đánh giá Weighted Blend Ensemble SOTA (kết hợp logarit + bù trôi EWMA)
     ens_scores = []
     for f_idx in range(len(folds)):
         blend_log = sum(ens_weights[m] * fold_preds_log[m][f_idx] for m in ens_weights)
+        if len(fold_ewma_offset) > f_idx:
+            blend_log = blend_log + 0.35 * fold_ewma_offset[f_idx]
         p_ens = np.maximum(0.0, np.expm1(blend_log))
         ens_score = rmsle(fold_y_true[f_idx], p_ens)
         ens_scores.append(round(ens_score, 4))
