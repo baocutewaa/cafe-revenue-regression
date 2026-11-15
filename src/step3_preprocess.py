@@ -19,7 +19,11 @@ from sklearn.pipeline import Pipeline
 TET_DATES = {
     2024: pd.Timestamp("2024-02-10"),  # Giáp Thìn
     2025: pd.Timestamp("2025-01-29"),  # Ất Tỵ
-    2026: pd.Timestamp("2026-02-17")   # Bính Ngọ
+    2026: pd.Timestamp("2026-02-17"),  # Bính Ngọ
+    2027: pd.Timestamp("2027-02-06"),  # Đinh Mùi
+    2028: pd.Timestamp("2028-01-26"),  # Mậu Thân
+    2029: pd.Timestamp("2029-02-13"),  # Kỷ Dậu
+    2030: pd.Timestamp("2030-02-03"),  # Canh Tuất
 }
 
 
@@ -407,7 +411,7 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     # --------------------------------------------------------------------------
     res["year"] = date_dt.dt.year
     tet_dt = res["year"].map(TET_DATES)
-    res["days_from_tet"] = (date_dt - tet_dt).dt.days
+    res["days_from_tet"] = (date_dt - tet_dt).dt.days.fillna(999).astype(int)
     res["days_from_tet_exact"] = res["days_from_tet"]
     res["days_from_tet_clipped"] = np.clip(res["days_from_tet"], -21, 21)
     d_tet = res["days_from_tet_clipped"]
