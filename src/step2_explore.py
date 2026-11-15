@@ -378,9 +378,9 @@ def generate_eda_plots(train_merged: pd.DataFrame, weather_df: pd.DataFrame, out
     if len(f_rows) > 0:
         ax.axhspan(45, 95, color="red", alpha=0.15, label="Fahrenheit Input Error Zone (°F > 45°C)")
         ax.annotate(
-            f"Lỗi độ °F tại TP.HCM (Tháng 6/2025): {len(f_rows)} ngày\\nNhiệt độ vọt lên {f_rows['temp_c'].min():.1f} - {f_rows['temp_c'].max():.1f}°F",
+            f"Fahrenheit outlier cluster in HCMC (June 2025): {len(f_rows)} days\nSpikes to {f_rows['temp_c'].min():.1f} - {f_rows['temp_c'].max():.1f}°F (equivalent to 27.9°C - 31.8°C)",
             xy=(pd.Timestamp("2025-06-20"), 85),
-            xytext=(pd.Timestamp("2024-08-01"), 80),
+            xytext=(pd.Timestamp("2024-07-01"), 80),
             arrowprops=dict(facecolor="red", shrink=0.05, width=1.5, headwidth=8),
             fontsize=11, fontweight="bold", color="darkred",
             bbox=dict(boxstyle="round,pad=0.5", fc="white", ec="red", lw=1.5)
@@ -400,6 +400,7 @@ def generate_eda_plots(train_merged: pd.DataFrame, weather_df: pd.DataFrame, out
     # BIỂU ĐỒ 3: DoW × Store Type Medians (Sự đảo chiều ngày thường vs cuối tuần)
     # --------------------------------------------------------------------------
     dow_matrix = df.groupby(["store_type_clean", "dow"])["revenue"].median().unstack()
+    dow_matrix.index = [str(s).replace("_", " ").title() for s in dow_matrix.index]
     dow_matrix.columns = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
     
     fig, ax = plt.subplots(figsize=(12, 6))
@@ -409,6 +410,13 @@ def generate_eda_plots(train_merged: pd.DataFrame, weather_df: pd.DataFrame, out
     ax.set_ylabel("Median Revenue (Million VND)")
     ax.set_xticklabels(ax.get_xticklabels(), rotation=0)
     ax.legend(title="Store Type", bbox_to_anchor=(1.02, 1), loc="upper left")
+    
+    # Annotations in English
+    ax.annotate("Mall surges +69% on weekends\n(28.3 - 29.7M VND)", xy=(5.2, 29), xytext=(3.5, 33),
+                arrowprops=dict(facecolor="#e74c3c", shrink=0.05, width=1.5), fontsize=10, fontweight="bold", color="#c0392b")
+    ax.annotate("Office drops -58% on Sunday\n(down to 8.1M VND)", xy=(6.0, 8.5), xytext=(4.2, 3),
+                arrowprops=dict(facecolor="#34495e", shrink=0.05, width=1.5), fontsize=10, fontweight="bold", color="#2c3e50")
+    
     plt.tight_layout()
     p3 = os.path.join(output_dir, "eda_3_dow_store_type_interaction.png")
     fig.savefig(p3, dpi=150)
@@ -428,12 +436,22 @@ def generate_eda_plots(train_merged: pd.DataFrame, weather_df: pd.DataFrame, out
     
     fig, ax = plt.subplots(figsize=(14, 6))
     for col in tet_agg.columns:
-        ax.plot(tet_agg.index, tet_agg[col], marker="o", markersize=4, label=f"{col.capitalize()} Store", linewidth=1.8)
+        ax.plot(tet_agg.index, tet_agg[col], marker="o", markersize=4, label=f"{str(col).replace('_', ' ').title()} Store", linewidth=1.8)
         
     ax.axvline(0, color="red", linestyle="--", linewidth=1.5, label="Tet Day 1 (Δ=0)")
     ax.axvspan(-2, 2, color="gray", alpha=0.15, label="Core 5-Day Tet Window (Tet Eve - Day 2)")
-    ax.axhline(1.0, color="black", linestyle=":", alpha=0.7)
-    
+    ax.axhline(1.0, color="black", linestyle=":", alpha=0.7, label="Baseline Normal Level (1.0x)")
+
+    # Chú thích đỉnh 23 Chạp của Mall
+    if -7 in tet_agg.index and "mall" in tet_agg:
+        ax.annotate("Kitchen Gods' Day Peak (23rd Dec Lunar): 1.51x", xy=(-7, tet_agg.loc[-7, "mall"]), xytext=(-16, 1.65),
+                    arrowprops=dict(facecolor="#e74c3c", shrink=0.05, width=1.5), fontsize=10, fontweight="bold", color="#c0392b")
+
+    # Chú thích sinh viên nghỉ sớm
+    if -10 in tet_agg.index and "university" in tet_agg:
+        ax.annotate("University early holiday departure: drops to ~0.45x", xy=(-10, tet_agg.loc[-10, "university"]), xytext=(-17, 0.25),
+                    arrowprops=dict(facecolor="#f39c12", shrink=0.05, width=1.5), fontsize=10, fontweight="bold", color="#d35400")
+        
     ax.set_title("Revenue Trajectory Around Lunar New Year by Store Type (Δ_Tet from -18 to +18 days)", fontsize=13, fontweight="bold")
     ax.set_xlabel("Days Relative to Tet Day 1 (Δ_Tet = date - Tet Day 1)")
     ax.set_ylabel("Revenue / Stable Baseline Ratio (sw_ratio)")
@@ -456,20 +474,23 @@ def generate_eda_plots(train_merged: pd.DataFrame, weather_df: pd.DataFrame, out
     
     # Chú thích đỉnh khai trương
     ax.annotate(
-        "Grand opening peak (first 3 days): ~1.65x - 1.93x",
+        "Grand Opening Peak (First 3 Days):\n~1.65x - 1.93x median",
         xy=(1, age_curve.loc[1] if 1 in age_curve else 1.7),
-        xytext=(10, 1.8),
-        arrowprops=dict(facecolor="darkviolet", shrink=0.05, width=1.5),
-        fontsize=10, fontweight="bold", color="darkviolet"
+        xytext=(8, 1.8),
+        arrowprops=dict(facecolor="#8e44ad", shrink=0.05, width=1.5),
+        fontsize=10, fontweight="bold", color="#6c3483",
+        bbox=dict(boxstyle="round,pad=0.4", fc="white", ec="#8e44ad", lw=1.2)
     )
     # Chú thích trũng tích lũy
     ax.annotate(
-        "Ramp-up dip (first week): ~0.61x",
+        "Ramp-up Dip (Days 3-7):\n~0.61x median",
         xy=(5, age_curve.loc[5] if 5 in age_curve else 0.61),
         xytext=(15, 0.45),
-        arrowprops=dict(facecolor="crimson", shrink=0.05, width=1.5),
-        fontsize=10, fontweight="bold", color="crimson"
+        arrowprops=dict(facecolor="#c0392b", shrink=0.05, width=1.5),
+        fontsize=10, fontweight="bold", color="#922b21",
+        bbox=dict(boxstyle="round,pad=0.4", fc="white", ec="#c0392b", lw=1.2)
     )
+    ax.axvspan(60, 90, color="green", alpha=0.1, label="Mature Stabilization Period (>60 days)")
     
     ax.set_title("New Store Lifecycle Curve: 0 - 90 Days Since Opening", fontsize=13, fontweight="bold")
     ax.set_xlabel("Days Since Opening (days_since_open)")
